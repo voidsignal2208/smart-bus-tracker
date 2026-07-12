@@ -1,0 +1,15 @@
+{
+    "name": "smart-bus-tracker-backend",
+    "version": "1.0.0",
+    "dependencies": [
+        "openssl",
+        "nlohmann-json",
+        "jwt-cpp",
+        {
+            "name": "drogon",
+            "features": [
+                "postgres"
+            ]
+        }
+    ]
+}
