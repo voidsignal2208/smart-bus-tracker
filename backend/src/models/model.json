@@ -1,0 +1,9 @@
+{
+    "//": "This file is only used by `drogon_ctl create model` to regenerate the ORM model classes in this directory from the live schema. It is NOT read by the running application (see config.json / EnvConfig for that). Fill in your local dev DB credentials here temporarily when regenerating models, but never commit real credentials.",
+    "rdbms": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "busdb",
+    "user": "postgres",
+    "passwd": "CHANGE_ME_LOCAL_DEV_ONLY"
+}

@@ -1,0 +1,6 @@
+/build/
+*.o
+*.gch
+
+# Secrets — never commit real values. Copy .env.example instead.
+.env
