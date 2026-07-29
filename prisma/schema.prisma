@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bus_assignments {
+  id                                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bus_id                                    String?   @db.Uuid
+  route_id                                  String?   @db.Uuid
+  driver_id                                 String?   @db.Uuid
+  conductor_id                              String?   @db.Uuid
+  status                                    String?   @default("SCHEDULED") @db.VarChar(50)
+  assignment_date                           DateTime  @db.Date
+  created_at                                DateTime? @default(now()) @db.Timestamp(6)
+  buses                                     buses?    @relation(fields: [bus_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_bus_assignments_conductor_idTousers users?    @relation("bus_assignments_conductor_idTousers", fields: [conductor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_bus_assignments_driver_idTousers    users?    @relation("bus_assignments_driver_idTousers", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  routes                                    routes?   @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bus_locations {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bus_id    String?   @db.Uuid
+  latitude  Decimal   @db.Decimal(10, 8)
+  longitude Decimal   @db.Decimal(11, 8)
+  speed     Decimal?  @db.Decimal(5, 2)
+  timestamp DateTime? @default(now()) @db.Timestamp(6)
+  buses     buses?    @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([bus_id], map: "idx_bus_locations_bus_id")
+  @@index([timestamp(sort: Desc)], map: "idx_bus_locations_timestamp")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model buses {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  license_plate   String            @unique @db.VarChar(20)
+  capacity        Int
+  status          String?           @default("ACTIVE") @db.VarChar(50)
+  created_at      DateTime?         @default(now()) @db.Timestamp(6)
+  bus_assignments bus_assignments[]
+  bus_locations   bus_locations[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notifications {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?   @db.Uuid
+  message    String
+  type       String?   @db.VarChar(50)
+  is_read    Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  users      users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model roles {
+  id    Int     @id @default(autoincrement())
+  name  String  @unique @db.VarChar(50)
+  users users[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model routes {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String            @db.VarChar(100)
+  origin          String            @db.VarChar(100)
+  destination     String            @db.VarChar(100)
+  created_at      DateTime?         @default(now()) @db.Timestamp(6)
+  bus_assignments bus_assignments[]
+  stops           stops[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stops {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  route_id       String? @db.Uuid
+  name           String  @db.VarChar(100)
+  latitude       Decimal @db.Decimal(10, 8)
+  longitude      Decimal @db.Decimal(11, 8)
+  sequence_order Int
+  routes         routes? @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([route_id, sequence_order])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model users {
+  id                                                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role_id                                             Int?
+  name                                                String            @db.VarChar(100)
+  email                                               String            @unique @db.VarChar(150)
+  password_hash                                       String            @db.VarChar(255)
+  phone                                               String?           @db.VarChar(20)
+  created_at                                          DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at                                          DateTime?         @default(now()) @db.Timestamp(6)
+  bus_assignments_bus_assignments_conductor_idTousers bus_assignments[] @relation("bus_assignments_conductor_idTousers")
+  bus_assignments_bus_assignments_driver_idTousers    bus_assignments[] @relation("bus_assignments_driver_idTousers")
+  notifications                                       notifications[]
+  roles                                               roles?            @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
