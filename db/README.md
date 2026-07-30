@@ -1,5 +1,4 @@
-# demo_rep
-first demo rep
+# db_setup
+setup using Prisma and Supabase
 <br>
-temp change
 
