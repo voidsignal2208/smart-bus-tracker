@@ -71,6 +71,7 @@ int main()
     EnvConfig::loadDotEnv("../.env");
     EnvConfig::loadDotEnv("../../.env");
     EnvConfig::loadDotEnv("../../../.env");
+    EnvConfig::loadDotEnv("../../../../.env");
     try
     {
         Json::Value config = loadAppConfig("config.json");
