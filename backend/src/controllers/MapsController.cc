@@ -5,6 +5,10 @@
 #include <drogon/drogon.h>
 #include <drogon/HttpClient.h>
 
+#include <sstream>
+#include <string>
+#include <vector>
+
 using namespace drogon;
 
 namespace
@@ -30,6 +34,40 @@ const std::string& directionsApiKey()
 // with the Google Maps JS library's own google.maps.geometry.encoding
 // helper - no need to decode it server-side at all.
 //for the frontend guy to do
+
+// Parses a "lat1,lng1|lat2,lng2|..." waypoints string (route stops, in
+// order) into validated "lat,lng" pairs suitable for Google's Directions
+// `waypoints` param. Returns false if any pair is malformed or out of
+// range - the caller treats that as a 400.
+bool parseWaypoints(const std::string& raw, std::vector<std::string>& outPairs)
+{
+    std::stringstream ss(raw);
+    std::string pair;
+    while (std::getline(ss, pair, '|'))
+    {
+        if (pair.empty()) continue;
+
+        auto commaPos = pair.find(',');
+        if (commaPos == std::string::npos) return false;
+
+        try
+        {
+            double lat = std::stod(pair.substr(0, commaPos));
+            double lng = std::stod(pair.substr(commaPos + 1));
+            if (!ValidationUtils::isValidLatitude(lat) || !ValidationUtils::isValidLongitude(lng))
+            {
+                return false;
+            }
+        }
+        catch (...)
+        {
+            return false;
+        }
+
+        outPairs.push_back(pair);
+    }
+    return true;
+}
 }  // namespace
 
 void MapsController::getRoutePolyline(const HttpRequestPtr& req,
@@ -68,13 +106,39 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
         return;
     }
 
+    // Optional: intermediate stops the road route must pass through, in
+    // order - e.g. every stop on a bus route between its origin and
+    // destination. Format: "lat1,lng1|lat2,lng2|...". These are never
+    // reordered (we don't ask Google to optimize:true them), since doing
+    // so could put stops out of the bus's actual sequence.
+    std::vector<std::string> waypointPairs;
+    auto waypointsParam = req->getParameter("waypoints");
+    if (!waypointsParam.empty() && !parseWaypoints(waypointsParam, waypointPairs))
+    {
+        callback(jsonError(k400BadRequest,
+                            "waypoints must be \"lat,lng|lat,lng|...\" with valid coordinates"));
+        return;
+    }
+
     auto client = HttpClient::newHttpClient("https://maps.googleapis.com");
 
     std::string path = "/maps/api/directions/json"
                         "?origin=" + originLatStr + "," + originLngStr +
                         "&destination=" + destLatStr + "," + destLngStr +
-                        "&mode=driving"
-                        "&key=" + directionsApiKey();
+                        "&mode=driving";
+
+    if (!waypointPairs.empty())
+    {
+        std::string joined;
+        for (size_t i = 0; i < waypointPairs.size(); ++i)
+        {
+            if (i > 0) joined += "|";
+            joined += waypointPairs[i];
+        }
+        path += "&waypoints=" + joined;
+    }
+
+    path += "&key=" + directionsApiKey();
 
     auto googleReq = HttpRequest::newHttpRequest();
     googleReq->setMethod(Get);
@@ -97,12 +161,22 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
             }
 
             const auto& route = (*googleJson)["routes"][0];
-            const auto& leg = route["legs"][0];
+            const auto& legs = route["legs"];
+
+            // With waypoints, Directions returns one leg per hop
+            // (origin->stop1, stop1->stop2, ..., stopN->destination) -
+            // sum them for the trip totals instead of only reading leg[0].
+            unsigned long long legDistance = 0, legDuration = 0;
+            for (const auto& leg : legs)
+            {
+                legDistance += leg["distance"]["value"].asUInt();
+                legDuration += leg["duration"]["value"].asUInt();
+            }
 
             Json::Value ret;
             ret["polyline"] = route["overview_polyline"]["points"];
-            ret["distance_meters"] = leg["distance"]["value"];
-            ret["duration_seconds"] = leg["duration"]["value"];
+            ret["distance_meters"] = static_cast<Json::UInt64>(legDistance);
+            ret["duration_seconds"] = static_cast<Json::UInt64>(legDuration);
 
             callback(HttpResponse::newHttpJsonResponse(ret));
         },

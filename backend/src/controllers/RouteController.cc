@@ -82,3 +82,18 @@ void RouteController::getRouteStops(const HttpRequestPtr& req,
 
     RouteService::getRouteStops(routeId, callback);
 }
+
+// ----------------------------------------------------------------------
+// API: GET /api/v1/routes/{routeId}/buses
+// Returns the (non-cancelled) buses assigned to this route.
+// ----------------------------------------------------------------------
+void RouteController::getRouteBuses(const HttpRequestPtr& req,
+                                    std::function<void(const HttpResponsePtr&)>&& callback,
+                                    std::string routeId) {
+    if (!ValidationUtils::isValidUuid(routeId)) {
+        callback(jsonError(k400BadRequest, "routeId must be a valid UUID"));
+        return;
+    }
+
+    RouteService::getRouteBuses(routeId, callback);
+}

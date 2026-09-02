@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Soft drop shadow so the marker reads clearly against any map tile color -->
+  <ellipse cx="32" cy="59" rx="14" ry="3" fill="#000000" opacity="0.18" />
+
+  <!-- Circular badge, in the app's lime accent color, with a white ring -->
+  <circle cx="32" cy="30" r="26" fill="#65a30d" stroke="#ffffff" stroke-width="3.5" />
+
+  <!-- Bus silhouette, side profile -->
+  <g transform="translate(14, 17)">
+    <!-- body -->
+    <rect x="0" y="4" width="36" height="20" rx="4" fill="#ffffff" />
+    <!-- roofline notch -->
+    <rect x="2" y="1" width="32" height="6" rx="3" fill="#ffffff" />
+    <!-- windshield / windows band -->
+    <rect x="3" y="6.5" width="30" height="7.5" rx="1.5" fill="#65a30d" />
+    <!-- individual window dividers -->
+    <rect x="10.5" y="6.5" width="1.6" height="7.5" fill="#ffffff" />
+    <rect x="18" y="6.5" width="1.6" height="7.5" fill="#ffffff" />
+    <rect x="25.5" y="6.5" width="1.6" height="7.5" fill="#ffffff" />
+    <!-- lower body stripe -->
+    <rect x="0" y="17" width="36" height="4.5" fill="#65a30d" />
+    <!-- headlight -->
+    <rect x="32.5" y="18" width="2.5" height="2.5" rx="0.6" fill="#fde047" />
+    <!-- wheels -->
+    <circle cx="8" cy="25.5" r="4" fill="#1c1917" />
+    <circle cx="8" cy="25.5" r="1.6" fill="#a3a3a3" />
+    <circle cx="28" cy="25.5" r="4" fill="#1c1917" />
+    <circle cx="28" cy="25.5" r="1.6" fill="#a3a3a3" />
+  </g>
+</svg>

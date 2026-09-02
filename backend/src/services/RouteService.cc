@@ -2,9 +2,13 @@
 
 #include "../models/Routes.h"
 #include "../models/Stops.h"
+#include "../models/BusAssignments.h"
+#include "../models/Buses.h"
 #include "../utils/ValidationUtils.h"
 
 #include <drogon/drogon.h>
+#include <map>
+#include <vector>
 
 using namespace drogon;
 using namespace drogon_model::postgres;
@@ -151,5 +155,74 @@ void RouteService::getRouteStops(const std::string& routeId, ResponseCallback ca
         },
         [callback](const orm::DrogonDbException& e) {
             callback(jsonError(k500InternalServerError, "Failed to fetch stops"));
+        });
+}
+
+// ----------------------------------------------------------------------
+// Buses currently assigned to a route. bus_assignments links bus_id <->
+// route_id; there's no single-query join helper on drogon::orm::Mapper,
+// so this is two round trips: assignments for the route, then the buses
+// those assignments point at.
+// ----------------------------------------------------------------------
+void RouteService::getRouteBuses(const std::string& routeId, ResponseCallback callback)
+{
+    auto dbClient = app().getDbClient();
+    orm::Mapper<BusAssignments> assignmentMapper(dbClient);
+
+    // SCHEDULED/ACTIVE assignments only - a CANCELLED assignment shouldn't
+    // make a bus show up as "on" a route anymore.
+    assignmentMapper.orderBy(BusAssignments::Cols::_assignment_date, orm::SortOrder::DESC).findBy(
+        orm::Criteria(BusAssignments::Cols::_route_id, orm::CompareOperator::EQ, routeId) &&
+        orm::Criteria(BusAssignments::Cols::_status, orm::CompareOperator::NE, std::string("CANCELLED")),
+        [callback, dbClient](const std::vector<BusAssignments>& assignments) {
+            if (assignments.empty())
+            {
+                callback(HttpResponse::newHttpJsonResponse(Json::Value(Json::arrayValue)));
+                return;
+            }
+
+            // Keep the assignment row alongside each bus_id so the response
+            // can carry status/driver_id/conductor_id too, and de-dupe in
+            // case a bus has multiple historical assignments to this route.
+            std::vector<std::string> busIds;
+            std::map<std::string, BusAssignments> assignmentByBusId;
+            for (const auto& a : assignments)
+            {
+                const std::string busId = a.getValueOfBusId();
+                if (busId.empty() || assignmentByBusId.count(busId)) continue;
+                busIds.push_back(busId);
+                assignmentByBusId.emplace(busId, a);
+            }
+
+            orm::Mapper<Buses> busMapper(dbClient);
+            busMapper.findBy(
+                orm::Criteria(Buses::Cols::_id, orm::CompareOperator::In, busIds),
+                [callback, assignmentByBusId](const std::vector<Buses>& buses) {
+                    Json::Value ret(Json::arrayValue);
+                    for (const auto& bus : buses)
+                    {
+                        Json::Value bJson;
+                        bJson["id"] = bus.getValueOfId();
+                        bJson["license_plate"] = bus.getValueOfLicensePlate();
+                        bJson["capacity"] = bus.getValueOfCapacity();
+                        bJson["status"] = bus.getValueOfStatus();
+
+                        auto it = assignmentByBusId.find(bus.getValueOfId());
+                        if (it != assignmentByBusId.end())
+                        {
+                            bJson["assignment_status"] = it->second.getValueOfStatus();
+                            bJson["driver_id"] = it->second.getValueOfDriverId();
+                            bJson["conductor_id"] = it->second.getValueOfConductorId();
+                        }
+                        ret.append(bJson);
+                    }
+                    callback(HttpResponse::newHttpJsonResponse(ret));
+                },
+                [callback](const orm::DrogonDbException& e) {
+                    callback(jsonError(k500InternalServerError, "Failed to fetch buses for route"));
+                });
+        },
+        [callback](const orm::DrogonDbException& e) {
+            callback(jsonError(k500InternalServerError, "Failed to fetch route assignments"));
         });
 }

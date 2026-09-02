@@ -1,7 +1,15 @@
 import React from 'react'
-import { Star, MapPin } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 
-const BusRow = ({ index, busNo, arrivalTime, rating, onTrack }) => {
+const STATUS_STYLES = {
+  ACTIVE: 'bg-lime-100 text-lime-900',
+  INACTIVE: 'bg-gray-200 text-gray-700',
+  MAINTENANCE: 'bg-amber-100 text-amber-900',
+}
+
+const BusRow = ({ index, licensePlate, routeName, capacity, status, onTrack }) => {
+  const badgeClass = STATUS_STYLES[status] || 'bg-gray-200 text-gray-700'
+
   return (
     <div className={`grid grid-cols-5 items-center px-6 py-4 ${index % 2 === 0 ? 'bg-amber-50' : 'bg-white'}`}>
       <div className='flex justify-start'>
@@ -10,18 +18,17 @@ const BusRow = ({ index, busNo, arrivalTime, rating, onTrack }) => {
         </span>
       </div>
 
-      <div className='text-sm text-gray-800'>{busNo}</div>
+      <div>
+        <div className='text-sm text-gray-800 font-medium'>{licensePlate}</div>
+        {routeName && <div className='text-xs text-gray-500'>{routeName}</div>}
+      </div>
 
-      <div className='text-sm text-gray-800'>{arrivalTime}</div>
+      <div className='text-sm text-gray-800'>{capacity} seats</div>
 
-      <div className='flex gap-0.5'>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <Star
-            key={n}
-            size={16}
-            className={n <= rating ? 'fill-lime-800 text-lime-800' : 'text-gray-300'}
-          />
-        ))}
+      <div>
+        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+          {status}
+        </span>
       </div>
 
       <div className='flex justify-start'>
