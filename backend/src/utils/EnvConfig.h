@@ -6,22 +6,22 @@
 #include <cstdlib>
 #include <cctype>
 
-// Small, dependency-free helper used to:
-//  1. Load KEY=VALUE pairs from a .env file into the process environment
-//     (only if the variable isn't already set, so real deployment envs
-//     always win over a local .env file).
-//  2. Expand ${VAR_NAME} placeholders inside a config file's text using
-//     the current process environment.
-//
-// This exists because Drogon's config loader (as of 1.8.x) does not
-// natively support ${VAR} substitution in config.json, so we do the
-// substitution ourselves before handing the JSON to Drogon.
+
+
+
+
+
+
+
+
+
+
 class EnvConfig
 {
 public:
-    // Reads a .env-style file (KEY=VALUE per line, '#' comments allowed)
-    // and calls setenv() for each key that is not already present in the
-    // environment. Safe to call even if the file doesn't exist.
+    
+    
+    
     static void loadDotEnv(const std::string& path)
     {
         std::ifstream file(path);
@@ -48,7 +48,7 @@ public:
             std::string key = trim(trimmed.substr(0, eqPos));
             std::string value = trim(trimmed.substr(eqPos + 1));
 
-            // Strip surrounding quotes if present
+            
             if (value.size() >= 2 &&
                 ((value.front() == '"' && value.back() == '"') ||
                  (value.front() == '\'' && value.back() == '\'')))
@@ -61,8 +61,8 @@ public:
                 continue;
             }
 
-            // Don't override variables already set in the real environment
-            // (e.g. by Docker/Kubernetes/systemd) with .env file contents.
+            
+            
             if (std::getenv(key.c_str()) == nullptr)
             {
 #ifdef _WIN32
@@ -74,7 +74,7 @@ public:
         }
     }
 
-    // Returns the value of an environment variable, or fallback if unset/empty.
+    
     static std::string getOrDefault(const std::string& key, const std::string& fallback)
     {
         const char* val = std::getenv(key.c_str());
@@ -85,9 +85,9 @@ public:
         return std::string(val);
     }
 
-    // Returns the value of an environment variable, or throws if it is unset.
-    // Use this for secrets that must never silently fall back to a default
-    // (e.g. JWT signing key, DB password in production).
+    
+    
+    
     static std::string require(const std::string& key)
     {
         const char* val = std::getenv(key.c_str());
@@ -100,10 +100,10 @@ public:
         return std::string(val);
     }
 
-    // Replaces every ${VAR_NAME} occurrence in `text` with the value of the
-    // corresponding environment variable. Unset variables are replaced with
-    // an empty string (the caller is responsible for validating required
-    // fields afterwards, e.g. via require()).
+    
+    
+    
+    
     static std::string expandEnvVars(const std::string& text)
     {
         std::string result;

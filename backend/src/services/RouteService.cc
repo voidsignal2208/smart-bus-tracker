@@ -23,7 +23,7 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     resp->setStatusCode(code);
     return resp;
 }
-}  // namespace
+}  
 
 void RouteService::createRoute(const std::string& name,
                                 const std::string& origin,
@@ -158,19 +158,19 @@ void RouteService::getRouteStops(const std::string& routeId, ResponseCallback ca
         });
 }
 
-// ----------------------------------------------------------------------
-// Buses currently assigned to a route. bus_assignments links bus_id <->
-// route_id; there's no single-query join helper on drogon::orm::Mapper,
-// so this is two round trips: assignments for the route, then the buses
-// those assignments point at.
-// ----------------------------------------------------------------------
+
+
+
+
+
+
 void RouteService::getRouteBuses(const std::string& routeId, ResponseCallback callback)
 {
     auto dbClient = app().getDbClient();
     orm::Mapper<BusAssignments> assignmentMapper(dbClient);
 
-    // SCHEDULED/ACTIVE assignments only - a CANCELLED assignment shouldn't
-    // make a bus show up as "on" a route anymore.
+    
+    
     assignmentMapper.orderBy(BusAssignments::Cols::_assignment_date, orm::SortOrder::DESC).findBy(
         orm::Criteria(BusAssignments::Cols::_route_id, orm::CompareOperator::EQ, routeId) &&
         orm::Criteria(BusAssignments::Cols::_status, orm::CompareOperator::NE, std::string("CANCELLED")),
@@ -181,9 +181,9 @@ void RouteService::getRouteBuses(const std::string& routeId, ResponseCallback ca
                 return;
             }
 
-            // Keep the assignment row alongside each bus_id so the response
-            // can carry status/driver_id/conductor_id too, and de-dupe in
-            // case a bus has multiple historical assignments to this route.
+            
+            
+            
             std::vector<std::string> busIds;
             std::map<std::string, BusAssignments> assignmentByBusId;
             for (const auto& a : assignments)

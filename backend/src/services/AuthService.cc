@@ -21,7 +21,7 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     resp->setStatusCode(code);
     return resp;
 }
-}  // namespace
+}  
 
 void AuthService::registerUser(const std::string& name,
                                 const std::string& email,
@@ -47,10 +47,10 @@ void AuthService::registerUser(const std::string& name,
         return;
     }
 
-    // Only allow self-registration as PASSENGER. Staff accounts (DRIVER,
-    // CONDUCTOR, ADMIN) should be created by an existing admin through a
-    // dedicated admin-only endpoint, never by an anonymous caller picking
-    // their own role_id.
+    
+    
+    
+    
     (void)roleId;
     int effectiveRoleId = Roles::PASSENGER;
 

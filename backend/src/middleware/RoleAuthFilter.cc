@@ -22,7 +22,7 @@ HttpResponsePtr serverMisconfigured()
     resp->setBody("{\"error\": \"Role check ran before authentication\"}");
     return resp;
 }
-}  // namespace
+}  
 
 void AdminOnlyFilter::doFilter(const HttpRequestPtr& req,
                                 FilterCallback&& fcb,

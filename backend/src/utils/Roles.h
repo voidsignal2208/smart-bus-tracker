@@ -1,7 +1,7 @@
 #pragma once
 
-// Mirrors the seed data in database/init.sql:
-// INSERT INTO roles (name) VALUES ('PASSENGER'), ('DRIVER'), ('CONDUCTOR'), ('ADMIN');
+
+
 namespace Roles
 {
     constexpr int PASSENGER = 1;

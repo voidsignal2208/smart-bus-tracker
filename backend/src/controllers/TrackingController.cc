@@ -13,14 +13,14 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     resp->setStatusCode(code);
     return resp;
 }
-}  // namespace
+}  
 
-// ----------------------------------------------------------------------
-// API: POST /api/v1/tracking/buses/{busId}/location
-// Body: { "latitude": 40.71, "longitude": -74.00, "speed_kmh": 22.5 }
-// speed_kmh is optional; if omitted it's derived from the previous reading.
-// Restricted to DRIVER/CONDUCTOR/ADMIN accounts.
-// ----------------------------------------------------------------------
+
+
+
+
+
+
 void TrackingController::postLocation(const HttpRequestPtr& req,
                                        std::function<void(const HttpResponsePtr&)>&& callback,
                                        std::string busId)
@@ -49,9 +49,9 @@ void TrackingController::postLocation(const HttpRequestPtr& req,
         });
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/tracking/buses/{busId}/location
-// ----------------------------------------------------------------------
+
+
+
 void TrackingController::getLatestLocation(const HttpRequestPtr& req,
                                             std::function<void(const HttpResponsePtr&)>&& callback,
                                             std::string busId)
@@ -59,9 +59,9 @@ void TrackingController::getLatestLocation(const HttpRequestPtr& req,
     TrackingService::getLatestLocation(busId, callback);
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/tracking/buses/{busId}/history?limit=50
-// ----------------------------------------------------------------------
+
+
+
 void TrackingController::getHistory(const HttpRequestPtr& req,
                                      std::function<void(const HttpResponsePtr&)>&& callback,
                                      std::string busId)

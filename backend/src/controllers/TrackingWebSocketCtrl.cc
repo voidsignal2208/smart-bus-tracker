@@ -16,13 +16,13 @@ void sendError(const WebSocketConnectionPtr& conn, const std::string& message)
     j["error"] = message;
     conn->send(j.toStyledString());
 }
-}  // namespace
+}  
 
 void TrackingWebSocketCtrl::handleNewConnection(const HttpRequestPtr& req,
                                                  const WebSocketConnectionPtr& conn)
 {
-    // WebSocket handshakes from browsers can't carry a custom Authorization
-    // header, so the JWT is passed as a query parameter instead.
+    
+    
     std::string token = req->getParameter("token");
     auto claims = JwtUtils::verifyToken(token);
 

@@ -28,17 +28,17 @@ const std::string& directionsApiKey()
     return key;
 }
 
-// Google's Directions API returns an encoded polyline string (a compact
-// text encoding of a list of lat/lng points) rather than raw coordinates.
-// We pass that string straight through to the frontend, which decodes it
-// with the Google Maps JS library's own google.maps.geometry.encoding
-// helper - no need to decode it server-side at all.
-//for the frontend guy to do
 
-// Parses a "lat1,lng1|lat2,lng2|..." waypoints string (route stops, in
-// order) into validated "lat,lng" pairs suitable for Google's Directions
-// `waypoints` param. Returns false if any pair is malformed or out of
-// range - the caller treats that as a 400.
+
+
+
+
+
+
+
+
+
+
 bool parseWaypoints(const std::string& raw, std::vector<std::string>& outPairs)
 {
     std::stringstream ss(raw);
@@ -68,7 +68,7 @@ bool parseWaypoints(const std::string& raw, std::vector<std::string>& outPairs)
     }
     return true;
 }
-}  // namespace
+}  
 
 void MapsController::getRoutePolyline(const HttpRequestPtr& req,
                                        std::function<void(const HttpResponsePtr&)>&& callback)
@@ -106,11 +106,11 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
         return;
     }
 
-    // Optional: intermediate stops the road route must pass through, in
-    // order - e.g. every stop on a bus route between its origin and
-    // destination. Format: "lat1,lng1|lat2,lng2|...". These are never
-    // reordered (we don't ask Google to optimize:true them), since doing
-    // so could put stops out of the bus's actual sequence.
+    
+    
+    
+    
+    
     std::vector<std::string> waypointPairs;
     auto waypointsParam = req->getParameter("waypoints");
     if (!waypointsParam.empty() && !parseWaypoints(waypointsParam, waypointPairs))
@@ -163,9 +163,9 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
             const auto& route = (*googleJson)["routes"][0];
             const auto& legs = route["legs"];
 
-            // With waypoints, Directions returns one leg per hop
-            // (origin->stop1, stop1->stop2, ..., stopN->destination) -
-            // sum them for the trip totals instead of only reading leg[0].
+            
+            
+            
             unsigned long long legDistance = 0, legDuration = 0;
             for (const auto& leg : legs)
             {
@@ -180,5 +180,5 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
 
             callback(HttpResponse::newHttpJsonResponse(ret));
         },
-        30 /* seconds timeout */);
+        30 );
 }

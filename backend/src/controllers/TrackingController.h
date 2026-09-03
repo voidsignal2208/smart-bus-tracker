@@ -2,9 +2,9 @@
 
 #include <drogon/HttpController.h>
 
-// HTTP-based alternative to pushing/reading location updates via the
-// /ws/tracking WebSocket. Useful for drivers whose client can't hold a
-// persistent WebSocket open, and for simple polling passenger clients.
+
+
+
 class TrackingController : public drogon::HttpController<TrackingController>
 {
 public:

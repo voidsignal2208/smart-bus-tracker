@@ -16,7 +16,7 @@ public:
 
     static void getAllRoutes(ResponseCallback callback);
 
-    // routeId must already be validated as a well-formed UUID by the caller.
+    
     static void addStop(const std::string& routeId,
                          const std::string& name,
                          double latitude,
@@ -26,7 +26,7 @@ public:
 
     static void getRouteStops(const std::string& routeId, ResponseCallback callback);
 
-    // Buses currently assigned to a route (join of bus_assignments -> buses).
-    // routeId must already be validated as a well-formed UUID by the caller.
+    
+    
     static void getRouteBuses(const std::string& routeId, ResponseCallback callback);
 };

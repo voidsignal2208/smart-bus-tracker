@@ -26,11 +26,11 @@ Json::Value locationToJson(const TrackingRepo::LocationRow& loc)
     }
     else
     {
-        // A default-constructed Json::Value is null-typed — behaviorally
-        // identical to the deprecated Json::Value::null static member,
-        // but doesn't depend on that symbol being exported from jsoncpp's
-        // library (it isn't reliably exported from newer/vcpkg builds,
-        // which causes an unresolved external symbol on MSVC).
+        
+        
+        
+        
+        
         j["speed_kmh"] = Json::Value();
     }
     j["timestamp"] = loc.getValueOfTimestamp().toDbStringLocal();
@@ -51,22 +51,22 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     return resp;
 }
 
-// The DB column is DECIMAL(5,2), i.e. max magnitude 999.99. Reject
-// obviously-bad speed values instead of letting the insert fail with a
-// confusing DB error. Declared at namespace scope (not as a local inside
-// recordLocation) so the lambdas below can use it without capturing it —
-// MSVC, unlike GCC/Clang, requires an explicit capture for a local
-// constexpr variable that's odr-used inside a nested lambda.
+
+
+
+
+
+
 constexpr double kMaxPlausibleSpeedKmh = 300.0;
 
-// --- WebSocket subscriber registry -----------------------------------
-// Guarded by a mutex since Drogon may dispatch WebSocket callbacks from
-// different IO-loop threads than the one handling an HTTP-triggered
-// location update.
+
+
+
+
 std::mutex g_subsMutex;
 std::unordered_map<std::string, std::unordered_set<WebSocketConnectionPtr>> g_busSubscribers;
 std::unordered_map<WebSocketConnectionPtr, std::string> g_connToBus;
-}  // namespace
+}  
 
 void TrackingService::recordLocation(const std::string& busId,
                                       double latitude,
@@ -86,9 +86,9 @@ void TrackingService::recordLocation(const std::string& busId,
         return;
     }
 
-    // The DB column is DECIMAL(5,2), i.e. max magnitude 999.99. Reject
-    // obviously-bad client-supplied values instead of letting the insert
-    // fail with a confusing DB error.
+    
+    
+    
     if (speedKmh.has_value() && (*speedKmh < 0 || *speedKmh > kMaxPlausibleSpeedKmh))
     {
         callback(false, errorJson("speed_kmh must be between 0 and 300"));
@@ -96,9 +96,9 @@ void TrackingService::recordLocation(const std::string& busId,
     }
 
     auto persist = [busId, latitude, longitude, callback](std::optional<double> computedSpeed) {
-        // A derived speed that's wildly implausible (e.g. from a GPS jump,
-        // or from clock skew between readings) shouldn't block recording
-        // the position — just store the point without a speed instead.
+        
+        
+        
         if (computedSpeed.has_value() && (*computedSpeed < 0 || *computedSpeed > kMaxPlausibleSpeedKmh))
         {
             computedSpeed.reset();
@@ -108,7 +108,7 @@ void TrackingService::recordLocation(const std::string& busId,
             [callback](const TrackingRepo::LocationRow& inserted) {
                 Json::Value payload = locationToJson(inserted);
 
-                // Broadcast to subscribed WebSocket clients.
+                
                 std::vector<WebSocketConnectionPtr> targets;
                 {
                     std::lock_guard<std::mutex> lock(g_subsMutex);
@@ -140,7 +140,7 @@ void TrackingService::recordLocation(const std::string& busId,
         return;
     }
 
-    // No speed supplied: derive it from the previous reading, if any.
+    
     TrackingRepo::getLatestLocation(busId,
         [latitude, longitude, persist](std::optional<TrackingRepo::LocationRow> prev) {
             if (!prev.has_value())
@@ -164,7 +164,7 @@ void TrackingService::recordLocation(const std::string& busId,
             persist(speed);
         },
         [persist](const std::string&) {
-            // If we can't look up history, still record the point without a speed.
+            
             persist(std::nullopt);
         });
 }
@@ -199,8 +199,8 @@ void TrackingService::getLocationHistory(const std::string& busId, int limit, Re
         return;
     }
 
-    // Parenthesized to prevent expansion by Windows.h's min/max macros,
-    // which would otherwise mis-parse std::min/std::max on MSVC.
+    
+    
     int clampedLimit = (std::min)((std::max)(limit, 1), 500);
 
     TrackingRepo::getLocationHistory(busId, clampedLimit,
@@ -221,7 +221,7 @@ void TrackingService::subscribe(const WebSocketConnectionPtr& conn, const std::s
 {
     std::lock_guard<std::mutex> lock(g_subsMutex);
 
-    // If already subscribed to a different bus, remove that subscription first.
+    
     auto existing = g_connToBus.find(conn);
     if (existing != g_connToBus.end())
     {

@@ -3,12 +3,12 @@
 
 namespace
 {
-// M_PI is a POSIX/GNU extension, not standard C++ — MSVC only defines it
-// if _USE_MATH_DEFINES is set before every single prior inclusion of
-// <cmath> in the translation unit (including via precompiled headers),
-// which is fragile. Defining our own constant sidesteps that entirely.
+
+
+
+
 constexpr double kPi = 3.14159265358979323846;
-}  // namespace
+}  
 
 double GeoUtils::toRadians(double degrees)
 {

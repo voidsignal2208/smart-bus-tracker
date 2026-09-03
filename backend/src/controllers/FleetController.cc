@@ -14,12 +14,12 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     resp->setStatusCode(code);
     return resp;
 }
-}  // namespace
+}  
 
-// ----------------------------------------------------------------------
-// API: POST /api/v1/fleet/buses
-// Body: { "license_plate": "XYZ-1234", "capacity": 50 }
-// ----------------------------------------------------------------------
+
+
+
+
 void FleetController::createBus(const HttpRequestPtr& req, 
                                 std::function<void(const HttpResponsePtr&)>&& callback) {
     auto json = req->getJsonObject();
@@ -41,13 +41,13 @@ void FleetController::createBus(const HttpRequestPtr& req,
         return;
     }
 
-    // 1. Create ORM Object
+    
     Buses newBus;
     newBus.setLicensePlate(licensePlate);
     newBus.setCapacity(capacity);
-    newBus.setStatus("ACTIVE"); // Default status
+    newBus.setStatus("ACTIVE"); 
 
-    // 2. Save asynchronously
+    
     auto dbClient = app().getDbClient();
     orm::Mapper<Buses> mapper(dbClient);
 
@@ -67,19 +67,19 @@ void FleetController::createBus(const HttpRequestPtr& req,
         });
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/fleet/buses
-// ----------------------------------------------------------------------
+
+
+
 void FleetController::getAllBuses(const HttpRequestPtr& req, 
                                   std::function<void(const HttpResponsePtr&)>&& callback) {
     
     auto dbClient = app().getDbClient();
     orm::Mapper<Buses> mapper(dbClient);
 
-    // Fetch all buses asynchronously
+    
     mapper.findAll(
         [callback](const std::vector<Buses>& buses) {
-            Json::Value ret(Json::arrayValue); // Create a JSON Array
+            Json::Value ret(Json::arrayValue); 
 
             for (const auto& bus : buses) {
                 Json::Value busJson;
@@ -87,7 +87,7 @@ void FleetController::getAllBuses(const HttpRequestPtr& req,
                 busJson["license_plate"] = bus.getValueOfLicensePlate();
                 busJson["capacity"] = bus.getValueOfCapacity();
                 
-                // FIX: It's already a raw string, so we just assign it directly!
+                
                 busJson["status"] = bus.getValueOfStatus(); 
                 
                 ret.append(busJson);

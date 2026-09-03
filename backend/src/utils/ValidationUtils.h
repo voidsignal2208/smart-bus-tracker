@@ -6,7 +6,7 @@
 class ValidationUtils
 {
 public:
-    // Accepts standard UUID v1-v5 textual form: 8-4-4-4-12 hex digits.
+    
     static bool isValidUuid(const std::string& value)
     {
         static const std::regex uuidPattern(
@@ -15,8 +15,8 @@ public:
         return std::regex_match(value, uuidPattern);
     }
 
-    // Deliberately simple RFC-5322-ish check: good enough to reject
-    // obviously malformed input without rejecting valid edge-case emails.
+    
+    
     static bool isValidEmail(const std::string& value)
     {
         static const std::regex emailPattern(

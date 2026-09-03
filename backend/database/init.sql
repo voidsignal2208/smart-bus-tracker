@@ -1,17 +1,17 @@
--- gen_random_uuid() (used as the default for every primary key below)
--- requires the pgcrypto extension.
+
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1. Roles Table
+
 CREATE TABLE roles (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL
 );
 
--- Insert default roles
+
 INSERT INTO roles (name) VALUES ('PASSENGER'), ('DRIVER'), ('CONDUCTOR'), ('ADMIN');
 
--- 2. Users Table
+
 CREATE TABLE users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     role_id INT REFERENCES roles(id),
@@ -23,7 +23,7 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Buses Table
+
 CREATE TABLE buses (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     license_plate VARCHAR(20) UNIQUE NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE buses (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Routes Table
+
 CREATE TABLE routes (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE routes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. Stops Table
+
 CREATE TABLE stops (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     route_id UUID REFERENCES routes(id) ON DELETE CASCADE,
@@ -52,7 +52,7 @@ CREATE TABLE stops (
     UNIQUE(route_id, sequence_order)
 );
 
--- 6. Bus Assignments
+
 CREATE TABLE bus_assignments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id),
@@ -64,7 +64,7 @@ CREATE TABLE bus_assignments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 7. Bus Locations (Historical Persistence)
+
 CREATE TABLE bus_locations (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
@@ -77,7 +77,7 @@ CREATE TABLE bus_locations (
 CREATE INDEX idx_bus_locations_bus_id ON bus_locations(bus_id);
 CREATE INDEX idx_bus_locations_timestamp ON bus_locations(timestamp DESC);
 
--- 8. Notifications Table
+
 CREATE TABLE notifications (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,

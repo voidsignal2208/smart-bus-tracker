@@ -62,7 +62,7 @@ std::string PasswordUtils::hashPassword(const std::string& password)
 
 bool PasswordUtils::verifyPassword(const std::string& password, const std::string& storedHash)
 {
-    // Expected format: pbkdf2-sha256$<iterations>$<salt-hex>$<hash-hex>
+    
     size_t firstDollar = storedHash.find('$');
     if (firstDollar == std::string::npos) return false;
 
@@ -103,7 +103,7 @@ bool PasswordUtils::verifyPassword(const std::string& password, const std::strin
 
     std::string actualHashHex = toHex(derivedKey.data(), kKeyBytes);
 
-    // Constant-time-ish comparison to reduce timing side-channel risk.
+    
     if (actualHashHex.size() != expectedHashHex.size()) return false;
     unsigned char diff = 0;
     for (size_t i = 0; i < actualHashHex.size(); ++i)

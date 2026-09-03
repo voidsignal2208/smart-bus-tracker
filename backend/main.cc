@@ -8,10 +8,10 @@
 
 namespace
 {
-// Reads config.json, expands ${VAR} placeholders using the process
-// environment, parses the result, and coerces the fields that Drogon
-// expects as JSON integers (but which arrive as strings after our text
-// substitution) back into integers.
+
+
+
+
 Json::Value loadAppConfig(const std::string& path)
 {
     std::ifstream file(path);
@@ -33,7 +33,7 @@ Json::Value loadAppConfig(const std::string& path)
         throw std::runtime_error("Failed to parse config.json after env expansion: " + errs);
     }
 
-    // Coerce fields that must be JSON integers but came through as strings.
+    
     if (root["listeners"].isArray())
     {
         for (auto& listener : root["listeners"])
@@ -58,15 +58,15 @@ Json::Value loadAppConfig(const std::string& path)
 
     return root;
 }
-}  // namespace
+}  
 
 int main()
 {
     std::cout << "Starting Smart Bus Tracker C++ Backend..." << std::endl;
 
-    // Load local dev secrets from backend/.env if present. In real
-    // deployments, environment variables are set by the platform instead
-    // and this is a no-op (existing env vars are never overwritten).
+    
+    
+    
     EnvConfig::loadDotEnv(".env");
     EnvConfig::loadDotEnv("../.env");
     EnvConfig::loadDotEnv("../../.env");
@@ -83,8 +83,8 @@ int main()
         return 1;
     }
 
-    // Public health-check route (no auth required) — useful for load
-    // balancers / container orchestrators / uptime checks.
+    
+    
     drogon::app().registerHandler(
         "/api/health",
         [](const drogon::HttpRequestPtr& req,

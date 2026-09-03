@@ -14,12 +14,12 @@ HttpResponsePtr jsonError(HttpStatusCode code, const std::string& message)
     resp->setStatusCode(code);
     return resp;
 }
-}  // namespace
+}  
 
-// ----------------------------------------------------------------------
-// API: POST /api/v1/routes
-// Body: { "name": "Airport Express", "origin": "Downtown", "destination": "Terminal 1" }
-// ----------------------------------------------------------------------
+
+
+
+
 void RouteController::createRoute(const HttpRequestPtr& req,
                                   std::function<void(const HttpResponsePtr&)>&& callback) {
     auto json = req->getJsonObject();
@@ -34,18 +34,18 @@ void RouteController::createRoute(const HttpRequestPtr& req,
                                callback);
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/routes
-// ----------------------------------------------------------------------
+
+
+
 void RouteController::getAllRoutes(const HttpRequestPtr& req,
                                    std::function<void(const HttpResponsePtr&)>&& callback) {
     RouteService::getAllRoutes(callback);
 }
 
-// ----------------------------------------------------------------------
-// API: POST /api/v1/routes/{routeId}/stops
-// Body: { "name": "Central Station", "latitude": 40.7128, "longitude": -74.0060, "sequence_order": 1 }
-// ----------------------------------------------------------------------
+
+
+
+
 void RouteController::addStop(const HttpRequestPtr& req,
                               std::function<void(const HttpResponsePtr&)>&& callback,
                               std::string routeId) {
@@ -69,9 +69,9 @@ void RouteController::addStop(const HttpRequestPtr& req,
                            callback);
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/routes/{routeId}/stops
-// ----------------------------------------------------------------------
+
+
+
 void RouteController::getRouteStops(const HttpRequestPtr& req,
                                     std::function<void(const HttpResponsePtr&)>&& callback,
                                     std::string routeId) {
@@ -83,10 +83,10 @@ void RouteController::getRouteStops(const HttpRequestPtr& req,
     RouteService::getRouteStops(routeId, callback);
 }
 
-// ----------------------------------------------------------------------
-// API: GET /api/v1/routes/{routeId}/buses
-// Returns the (non-cancelled) buses assigned to this route.
-// ----------------------------------------------------------------------
+
+
+
+
 void RouteController::getRouteBuses(const HttpRequestPtr& req,
                                     std::function<void(const HttpResponsePtr&)>&& callback,
                                     std::string routeId) {
