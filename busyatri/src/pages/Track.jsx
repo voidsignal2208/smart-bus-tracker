@@ -3,12 +3,14 @@ import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import { useSearchParams } from 'react-router-dom'
 import { GoogleMap, Marker, Polyline, useJsApiLoader } from '@react-google-maps/api'
-import { Bus, Clock, Gauge, MapPin, Loader2, WifiOff } from 'lucide-react'
+import { Bus, Clock, Gauge, MapPin, Loader2, WifiOff, Star, X, Send, CheckCircle } from 'lucide-react'
 import {
   getLatestLocation,
   getLocationHistory,
   getRouteStops,
   getRoutePolyline,
+  submitFeedback,
+  getBusFeedback,
   ApiError,
 } from '../lib/api'
 import { subscribeToBusLocation } from '../lib/trackingSocket'
@@ -70,12 +72,73 @@ const Track = () => {
   const [routePath, setRoutePath] = useState([]) // decoded {lat,lng}[] from the Directions polyline
   const [routeError, setRouteError] = useState('')
 
+  // Passenger feedback & rating
+  const [feedbackData, setFeedbackData] = useState({
+    average_rating: 5,
+    total_reviews: 0,
+    avg_cleanliness: 5,
+    crowded_pct: 0,
+    ac_working_pct: 100,
+    recent_comments: [],
+  })
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
+  const [feedbackForm, setFeedbackForm] = useState({
+    rating: 5,
+    cleanliness: 5,
+    ac_working: true,
+    is_crowded: false,
+    comment: '',
+  })
+
   const mapRef = useRef(null)
   const didFitBoundsRef = useRef(false)
 
   const onMapLoad = useCallback((map) => {
     mapRef.current = map
   }, [])
+
+  const fetchFeedback = useCallback(() => {
+    if (!busId) return
+    getBusFeedback(busId)
+      .then((data) => {
+        if (data) setFeedbackData(data)
+      })
+      .catch((err) => {
+        console.warn('Could not fetch bus feedback:', err)
+      })
+  }, [busId])
+
+  useEffect(() => {
+    fetchFeedback()
+  }, [fetchFeedback])
+
+  const handleFeedbackSubmit = async (e) => {
+    if (e) e.preventDefault()
+    if (!busId) return
+    setSubmittingFeedback(true)
+    try {
+      await submitFeedback(busId, feedbackForm)
+      setFeedbackSubmitted(true)
+      fetchFeedback()
+      setTimeout(() => {
+        setShowFeedbackModal(false)
+        setFeedbackSubmitted(false)
+        setFeedbackForm({
+          rating: 5,
+          cleanliness: 5,
+          ac_working: true,
+          is_crowded: false,
+          comment: '',
+        })
+      }, 1400)
+    } catch (err) {
+      alert(err.message || 'Failed to submit feedback. Please try again.')
+    } finally {
+      setSubmittingFeedback(false)
+    }
+  }
 
   // Initial fetch: latest known location + recent history, so the map
   // isn't empty while the WebSocket connection is still opening.
@@ -407,10 +470,247 @@ const Track = () => {
                   </ol>
                 </div>
               )}
+
+              {/* Passenger feedback & ratings */}
+              <div className='border-t border-gray-100 pt-3 space-y-3'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5'>
+                    <Star size={16} className='fill-amber-400 text-amber-400' />
+                    <span className='text-sm font-semibold text-gray-800'>
+                      {Number(feedbackData.average_rating).toFixed(1)}
+                    </span>
+                    <span className='text-xs text-gray-500'>
+                      ({feedbackData.total_reviews} review{feedbackData.total_reviews === 1 ? '' : 's'})
+                    </span>
+                  </div>
+                  <button
+                    type='button'
+                    onClick={() => setShowFeedbackModal(true)}
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-lime-700 hover:bg-lime-800 rounded-lg shadow-sm transition'
+                  >
+                    <Star size={13} />
+                    Rate Your Journey
+                  </button>
+                </div>
+
+                <div className='grid grid-cols-3 gap-2 text-center'>
+                  <div className='bg-stone-50 rounded-lg py-2'>
+                    <p className='text-xs font-semibold text-gray-800'>
+                      {Number(feedbackData.avg_cleanliness).toFixed(1)}/5
+                    </p>
+                    <p className='text-[10px] text-gray-500'>Cleanliness</p>
+                  </div>
+                  <div className='bg-stone-50 rounded-lg py-2'>
+                    <p className='text-xs font-semibold text-gray-800'>{feedbackData.ac_working_pct}%</p>
+                    <p className='text-[10px] text-gray-500'>AC Working</p>
+                  </div>
+                  <div className='bg-stone-50 rounded-lg py-2'>
+                    <p className='text-xs font-semibold text-gray-800'>{feedbackData.crowded_pct}%</p>
+                    <p className='text-[10px] text-gray-500'>Crowded</p>
+                  </div>
+                </div>
+
+                {feedbackData.recent_comments?.length > 0 && (
+                  <div className='space-y-2'>
+                    <p className='text-xs font-semibold text-gray-500'>RECENT FEEDBACK</p>
+                    {feedbackData.recent_comments.map((c, i) => (
+                      <div key={i} className='bg-stone-50 rounded-lg p-2.5 text-xs text-gray-700 space-y-1'>
+                        <p>{c.comment}</p>
+                        <div className='flex items-center gap-2 text-[10px] text-gray-500'>
+                          <span>Cleanliness: {c.cleanliness}/5</span>
+                          <span>•</span>
+                          <span>AC: {c.ac_working ? 'Yes' : 'No'}</span>
+                          <span>•</span>
+                          <span>{c.is_crowded ? 'Crowded' : 'Not Crowded'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Modal for feedback submission */}
+      {showFeedbackModal && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4'>
+          <div className='bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200'>
+            <button
+              type='button'
+              onClick={() => setShowFeedbackModal(false)}
+              className='absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition'
+            >
+              <X size={20} />
+            </button>
+
+            <h2 className='text-lg font-bold text-gray-900 mb-1'>Rate Your Journey</h2>
+            <p className='text-xs text-gray-500 mb-4'>
+              Your feedback updates live ratings and helps fellow passengers.
+            </p>
+
+            {feedbackSubmitted ? (
+              <div className='py-8 text-center space-y-2'>
+                <CheckCircle size={44} className='mx-auto text-emerald-600 animate-bounce' />
+                <h3 className='text-base font-bold text-gray-800'>Thank you!</h3>
+                <p className='text-xs text-gray-600'>Your feedback and rating have been recorded.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleFeedbackSubmit} className='space-y-4'>
+                {/* Overall Star Rating */}
+                <div>
+                  <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                    Overall Experience Rating
+                  </label>
+                  <div className='flex items-center gap-2'>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, rating: star }))}
+                        className='p-1 hover:scale-110 transition-transform'
+                      >
+                        <Star
+                          size={28}
+                          className={
+                            star <= feedbackForm.rating
+                              ? 'fill-amber-400 text-amber-400'
+                              : 'text-gray-300 hover:text-amber-200'
+                          }
+                        />
+                      </button>
+                    ))}
+                    <span className='ml-2 text-sm font-bold text-amber-600'>
+                      {feedbackForm.rating} / 5
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cleanliness Rating */}
+                <div>
+                  <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                    Bus Cleanliness Rating
+                  </label>
+                  <div className='flex gap-1.5'>
+                    {[1, 2, 3, 4, 5].map((val) => (
+                      <button
+                        key={val}
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, cleanliness: val }))}
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition ${
+                          feedbackForm.cleanliness === val
+                            ? 'bg-lime-700 text-white border-lime-700 shadow-xs'
+                            : 'bg-stone-50 text-gray-700 border-gray-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        {val} ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* AC and Crowdedness Toggles */}
+                <div className='grid grid-cols-2 gap-3 pt-1'>
+                  <div>
+                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                      AC Working?
+                    </label>
+                    <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
+                      <button
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: true }))}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                          feedbackForm.ac_working
+                            ? 'bg-white text-lime-800 shadow-xs font-bold'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: false }))}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                          !feedbackForm.ac_working
+                            ? 'bg-white text-rose-700 shadow-xs font-bold'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                      Is Bus Crowded?
+                    </label>
+                    <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
+                      <button
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: true }))}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                          feedbackForm.is_crowded
+                            ? 'bg-white text-orange-700 shadow-xs font-bold'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        type='button'
+                        onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: false }))}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                          !feedbackForm.is_crowded
+                            ? 'bg-white text-lime-800 shadow-xs font-bold'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comment / Review */}
+                <div>
+                  <label className='block text-xs font-semibold text-gray-700 mb-1'>
+                    Comment or Remarks (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={feedbackForm.comment}
+                    onChange={(e) => setFeedbackForm((prev) => ({ ...prev, comment: e.target.value }))}
+                    placeholder='Share details about cleanliness, driver conduct, punctuality...'
+                    className='w-full text-xs rounded-lg border border-gray-300 p-2.5 focus:border-lime-700 focus:outline-hidden focus:ring-1 focus:ring-lime-700'
+                  />
+                </div>
+
+                {/* Action buttons */}
+                <div className='flex items-center justify-end gap-2 pt-2'>
+                  <button
+                    type='button'
+                    onClick={() => setShowFeedbackModal(false)}
+                    className='px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition'
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type='submit'
+                    disabled={submittingFeedback}
+                    className='flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-lime-700 hover:bg-lime-800 disabled:opacity-50 rounded-lg shadow-sm transition'
+                  >
+                    <Send size={13} />
+                    {submittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   )

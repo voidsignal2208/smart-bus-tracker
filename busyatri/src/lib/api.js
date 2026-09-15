@@ -101,6 +101,22 @@ export function createBus({ license_plate, capacity }) {
 }
 
 // ---------------------------------------------------------------------
+// Fleet feedback & ratings
+// ---------------------------------------------------------------------
+// Public endpoints (no auth) - a passenger can rate/review a journey
+// without being logged in, same as the live WebSocket tracking above.
+export function submitFeedback(busId, { rating, cleanliness, ac_working, is_crowded, comment }) {
+  return request(`/api/v1/fleet/buses/${busId}/feedback`, {
+    method: 'POST',
+    body: { rating, cleanliness, ac_working, is_crowded, comment },
+  })
+}
+
+export function getBusFeedback(busId) {
+  return request(`/api/v1/fleet/buses/${busId}/feedback`)
+}
+
+// ---------------------------------------------------------------------
 // Routes & stops
 // ---------------------------------------------------------------------
 export function getRoutes() {

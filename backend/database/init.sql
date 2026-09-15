@@ -86,3 +86,28 @@ CREATE TABLE notifications (
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 9. Bus Ratings (per-journey star rating submitted by a passenger)
+CREATE TABLE bus_ratings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
+    rating INT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Bus Feedback (detailed passenger feedback - cleanliness, AC, crowding)
+CREATE TABLE bus_feedback (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
+    is_crowded BOOLEAN DEFAULT FALSE,
+    ac_working BOOLEAN DEFAULT TRUE,
+    cleanliness INT,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Aggregate rating / feedback score kept on buses itself, refreshed on
+-- every feedback submission (see FleetController::submitFeedback)
+ALTER TABLE buses ADD COLUMN rating DECIMAL(3, 2) DEFAULT 0;
+ALTER TABLE buses ADD COLUMN feedback_score DECIMAL(3, 2) DEFAULT 0;
