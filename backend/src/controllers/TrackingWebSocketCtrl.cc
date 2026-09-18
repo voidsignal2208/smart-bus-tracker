@@ -24,16 +24,14 @@ void TrackingWebSocketCtrl::handleNewConnection(const HttpRequestPtr& req,
     
     
     std::string token = req->getParameter("token");
-    auto claims = JwtUtils::verifyToken(token);
-
-    if (!claims.has_value())
+    if (!token.empty())
     {
-        LOG_WARN << "Rejecting WebSocket connection: missing/invalid token";
-        conn->shutdown(CloseCode::kViolation, "Missing or invalid token");
-        return;
+        auto claims = JwtUtils::verifyToken(token);
+        if (claims.has_value())
+        {
+            conn->setContext(std::make_shared<AuthClaims>(*claims));
+        }
     }
-
-    conn->setContext(std::make_shared<AuthClaims>(*claims));
 }
 
 void TrackingWebSocketCtrl::handleNewMessage(const WebSocketConnectionPtr& conn,
@@ -42,14 +40,6 @@ void TrackingWebSocketCtrl::handleNewMessage(const WebSocketConnectionPtr& conn,
 {
     if (type != WebSocketMessageType::Text)
     {
-        return;
-    }
-
-    auto claims = conn->getContext<AuthClaims>();
-    if (!claims)
-    {
-        sendError(conn, "Not authenticated");
-        conn->shutdown();
         return;
     }
 
@@ -83,6 +73,13 @@ void TrackingWebSocketCtrl::handleNewMessage(const WebSocketConnectionPtr& conn,
 
     if (action == "push_location")
     {
+        auto claims = conn->getContext<AuthClaims>();
+        if (!claims)
+        {
+            sendError(conn, "Not authenticated");
+            return;
+        }
+
         if (claims->roleId != Roles::DRIVER && claims->roleId != Roles::CONDUCTOR &&
             claims->roleId != Roles::ADMIN)
         {

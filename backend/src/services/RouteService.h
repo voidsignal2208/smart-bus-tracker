@@ -26,7 +26,10 @@ public:
 
     static void getRouteStops(const std::string& routeId, ResponseCallback callback);
 
-    
-    
-    static void getRouteBuses(const std::string& routeId, ResponseCallback callback);
+    static void getRouteBuses(const std::string& routeId, const std::string& date, ResponseCallback callback);
+
+    static void assignBus(const std::string& routeId,
+                          const std::string& busId,
+                          const std::string& status,
+                          ResponseCallback callback);
 };

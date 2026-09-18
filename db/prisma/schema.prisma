@@ -43,9 +43,33 @@ model buses {
   license_plate   String            @unique @db.VarChar(20)
   capacity        Int
   status          String?           @default("ACTIVE") @db.VarChar(50)
+  rating          Decimal?          @db.Decimal(3, 2)
+  feedback_score  Decimal?          @db.Decimal(3, 2)
   created_at      DateTime?         @default(now()) @db.Timestamp(6)
   bus_assignments bus_assignments[]
   bus_locations   bus_locations[]
+  bus_feedback    bus_feedback[]
+  bus_ratings     bus_ratings[]
+}
+
+model bus_feedback {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bus_id      String?   @db.Uuid
+  is_crowded  Boolean?  @default(false)
+  ac_working  Boolean?  @default(true)
+  cleanliness Int
+  comment     String?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  buses       buses?    @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model bus_ratings {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bus_id     String?   @db.Uuid
+  rating     Int
+  comment    String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  buses      buses?    @relation(fields: [bus_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.

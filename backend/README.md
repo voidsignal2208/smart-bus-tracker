@@ -71,7 +71,6 @@ Health check: `GET /api/health` → `{"status":"ok"}`
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/api/v1/auth/register` | none | Always registers as PASSENGER — self-registration can't pick a role |
 | POST | `/api/v1/auth/login` | none | Returns a JWT |
 | GET | `/api/v1/fleet/buses` | any logged-in user | |
 | POST | `/api/v1/fleet/buses` | ADMIN | |
@@ -84,9 +83,8 @@ Health check: `GET /api/health` → `{"status":"ok"}`
 | POST | `/api/v1/tracking/buses/{busId}/location` | DRIVER/CONDUCTOR/ADMIN | `speed_kmh` optional — derived from the previous point if omitted |
 | WS | `/ws/tracking?token=<JWT>` | any logged-in user (token as query param) | `{"action":"subscribe","bus_id":...}` to receive live updates; `{"action":"push_location",...}` (staff only) to publish a position |
 
-There's currently no admin endpoint to promote a user to DRIVER/CONDUCTOR/ADMIN —
-do that directly in the database for now (`UPDATE users SET role_id = ... WHERE
-email = ...`), or add such an endpoint (ADMIN-only) as a next step.
+This deployment has no public account-creation endpoint. Provision Driver and
+Admin accounts directly in the organization database.
 
 ## What was fixed from the original codebase
 

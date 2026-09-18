@@ -2,77 +2,52 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import { useSearchParams } from 'react-router-dom'
-import { GoogleMap, Marker, Polyline, useJsApiLoader } from '@react-google-maps/api'
-import { Bus, Clock, Gauge, MapPin, Loader2, WifiOff, Star, X, Send, CheckCircle } from 'lucide-react'
-import {
-  getLatestLocation,
-  getLocationHistory,
-  getRouteStops,
-  getRoutePolyline,
-  submitFeedback,
-  getBusFeedback,
-  ApiError,
-} from '../lib/api'
-import { subscribeToBusLocation } from '../lib/trackingSocket'
-import busIconUrl from '../assets/bus-icon.svg'
+import { GoogleMap, Marker, DirectionsRenderer, Polyline, InfoWindow, useJsApiLoader } from '@react-google-maps/api'
+import { Bus, Clock, AlertTriangle, MapPin, Gauge, Wifi, WifiOff, User, Phone, Star, Navigation, Sparkles, Wind, Users, CheckCircle, X, MessageSquare, ThumbsUp, Send } from 'lucide-react'
+import { useBusTracking } from '../hooks/useBusTracking'
+import { trackingService } from '../services/trackingService'
+import { routeService } from '../services/routeService'
+import { fleetService } from '../services/fleetService'
 
-// Bundled into the frontend build and visible to anyone who inspects the
-// page - that's expected for a Google Maps JS API key, as long as it's
-// restricted (in Google Cloud Console) to your site's HTTP referrers.
-// This is a DIFFERENT key from the backend's GOOGLE_MAPS_SERVER_KEY,
-// which must stay server-side only.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+// Reads from .env (VITE_GOOGLE_MAPS_API_KEY)
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
-// `geometry` gives us google.maps.geometry.encoding.decodePath, used below
-// to turn the encoded polyline the backend forwards from Google Directions
-// into an actual array of lat/lng points. Declared as a module-level
-// constant (not inline in the component) because useJsApiLoader reloads
-// the whole Maps script if it's ever passed a new array reference.
-const MAP_LIBRARIES = ['geometry']
-
-const containerStyle = {
-  width: '100%',
-  height: '100%',
-}
-
-// India's centroid - just an initial mount position before we know where
-// anything actually is. fitBounds() (see below) takes over as soon as we
-// have real stops/location data, so this is never what the user ends up
-// looking at.
-const DEFAULT_CENTER = { lat: 20.5937, lng: 78.9629 }
-
+const containerStyle = { width: '100%', height: '100%' }
 const SNAP_POINTS = [120, 400, 620]
+const DEFAULT_CENTER = { lat: 28.6139, lng: 77.209 }
+
+const staticInfo = {
+  driver: 'Assigned Driver',
+  contact: '+91 98765 43210',
+  rating: 5,
+}
 
 const Track = () => {
   const [searchParams] = useSearchParams()
-  const from = searchParams.get('from') || ''
-  const to = searchParams.get('to') || ''
-  const busNo = searchParams.get('busNo') || 'N/A'
-  const busId = searchParams.get('busId')
-  const routeId = searchParams.get('routeId')
+  const from = searchParams.get('from') || 'Origin'
+  const to = searchParams.get('to') || 'Destination'
+  const busId = searchParams.get('busId') || ''
+  const routeId = searchParams.get('routeId') || ''
 
-  const { isLoaded } = useJsApiLoader({
+  const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: MAP_LIBRARIES,
   })
 
+  // WebSocket live tracking (works without login now)
+  const { location: wsLocation, connected, error: wsError } = useBusTracking(busId)
+
+  const [map, setMap] = useState(null)
   const [height, setHeight] = useState(SNAP_POINTS[0])
+  const [directions, setDirections] = useState(null)
+  const [busPosition, setBusPosition] = useState(null)
+  const [busSpeed, setBusSpeed] = useState(0)
+  const [lastUpdate, setLastUpdate] = useState(null)
+  const [stops, setStops] = useState([])
+  const [selectedMarker, setSelectedMarker] = useState(null)
   const startY = useRef(0)
   const startHeight = useRef(0)
 
-  const [current, setCurrent] = useState(null) // { latitude, longitude, speed_kmh, timestamp }
-  const [historyPath, setHistoryPath] = useState([])
-  const [connectionState, setConnectionState] = useState('connecting') // connecting | live | error
-  const [loadError, setLoadError] = useState('')
-
-  // The route this bus is running: its stops (in sequence_order) and the
-  // actual road-following path Google Directions draws through all of
-  // them - not a straight line from stop to stop.
-  const [routeStops, setRouteStops] = useState([])
-  const [routePath, setRoutePath] = useState([]) // decoded {lat,lng}[] from the Directions polyline
-  const [routeError, setRouteError] = useState('')
-
-  // Passenger feedback & rating
+  // Passenger Feedback & Rating state
   const [feedbackData, setFeedbackData] = useState({
     average_rating: 5,
     total_reviews: 0,
@@ -92,16 +67,14 @@ const Track = () => {
     comment: '',
   })
 
-  const mapRef = useRef(null)
-  const didFitBoundsRef = useRef(false)
-
-  const onMapLoad = useCallback((map) => {
-    mapRef.current = map
+  const onMapLoad = useCallback((mapInstance) => {
+    setMap(mapInstance)
   }, [])
 
   const fetchFeedback = useCallback(() => {
     if (!busId) return
-    getBusFeedback(busId)
+    fleetService
+      .getBusFeedback(busId)
       .then((data) => {
         if (data) setFeedbackData(data)
       })
@@ -119,7 +92,7 @@ const Track = () => {
     if (!busId) return
     setSubmittingFeedback(true)
     try {
-      await submitFeedback(busId, feedbackForm)
+      await fleetService.submitFeedback(busId, feedbackForm)
       setFeedbackSubmitted(true)
       fetchFeedback()
       setTimeout(() => {
@@ -140,138 +113,109 @@ const Track = () => {
     }
   }
 
-  // Initial fetch: latest known location + recent history, so the map
-  // isn't empty while the WebSocket connection is still opening.
+
+  // Fetch initial location via REST
   useEffect(() => {
     if (!busId) return
-    let cancelled = false
-
-    async function loadInitial() {
-      try {
-        const latest = await getLatestLocation(busId)
-        if (!cancelled) setCurrent(latest)
-      } catch (err) {
-        // A 404 here just means this bus has no recorded position yet -
-        // not a real error, the live feed below may still populate it.
-        if (!cancelled && !(err instanceof ApiError && err.status === 404)) {
-          setLoadError(err.message)
+    trackingService
+      .getLatestLocation(busId)
+      .then((data) => {
+        if (data && data.latitude && data.longitude) {
+          setBusPosition({ lat: parseFloat(data.latitude), lng: parseFloat(data.longitude) })
+          setBusSpeed(data.speed_kmh ? parseFloat(data.speed_kmh) : 0)
+          setLastUpdate(data.timestamp)
         }
-      }
-
-      try {
-        const history = await getLocationHistory(busId, 50)
-        if (!cancelled) {
-          setHistoryPath(
-            history
-              .slice()
-              .reverse()
-              .map((h) => ({ lat: h.latitude, lng: h.longitude }))
-          )
-        }
-      } catch {
-        // History is a nice-to-have for the trail on the map; ignore failures.
-      }
-    }
-
-    loadInitial()
-    return () => {
-      cancelled = true
-    }
+      })
+      .catch(() => {
+        // No recorded location yet
+      })
   }, [busId])
 
-  // The route itself: stops, then the road-snapped path through them.
-  // Only runs once the Maps JS API (and its geometry library) is loaded,
-  // since decoding the polyline needs google.maps.geometry.encoding.
+  // Fetch route stops from Supabase database
   useEffect(() => {
-    if (!routeId || !isLoaded) return
-    let cancelled = false
-
-    async function loadRoute() {
-      setRouteError('')
-      try {
-        const stops = await getRouteStops(routeId)
-        if (cancelled) return
-        const ordered = stops.slice().sort((a, b) => a.sequence_order - b.sequence_order)
-        setRouteStops(ordered)
-
-        if (ordered.length < 2) return // nothing to draw a path through
-
-        const origin = ordered[0]
-        const destination = ordered[ordered.length - 1]
-        const waypoints = ordered.slice(1, -1).map((s) => ({ lat: s.latitude, lng: s.longitude }))
-
-        const { polyline } = await getRoutePolyline({
-          originLat: origin.latitude,
-          originLng: origin.longitude,
-          destLat: destination.latitude,
-          destLng: destination.longitude,
-          waypoints,
-        })
-        if (cancelled) return
-
-        const decoded = window.google.maps.geometry.encoding
-          .decodePath(polyline)
-          .map((p) => ({ lat: p.lat(), lng: p.lng() }))
-        setRoutePath(decoded)
-      } catch (err) {
-        if (!cancelled) {
-          setRouteError(err instanceof ApiError ? err.message : "Failed to load this bus's route.")
+    if (!routeId) return
+    routeService
+      .getRouteStops(routeId)
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const sortedStops = data.sort((a, b) => a.sequence_order - b.sequence_order)
+          setStops(sortedStops)
         }
-      }
-    }
+      })
+      .catch(() => {})
+  }, [routeId])
 
-    loadRoute()
-    return () => {
-      cancelled = true
-    }
-  }, [routeId, isLoaded])
-
-  // Live updates over /ws/tracking.
+  // Update bus position from WebSocket real-time broadcast
   useEffect(() => {
-    if (!busId) return
+    if (wsLocation) {
+      setBusPosition({ lat: wsLocation.lat, lng: wsLocation.lng })
+      setBusSpeed(wsLocation.speed || 0)
+      setLastUpdate(wsLocation.timestamp)
+    }
+  }, [wsLocation])
 
-    const unsubscribe = subscribeToBusLocation(busId, {
-      onOpen: () => setConnectionState('live'),
-      onLocation: (payload) => {
-        setCurrent(payload)
-        setHistoryPath((prev) => [...prev, { lat: payload.latitude, lng: payload.longitude }])
-      },
-      onError: () => setConnectionState('error'),
-    })
-
-    return unsubscribe
-  }, [busId])
-
-  // Fit the map to whatever we actually have (route stops + bus position)
-  // exactly once, instead of recentering on every single GPS tick - that
-  // was fighting the user any time they tried to pan or zoom around, and
-  // is also why the map used to look "stuck" on one generic view.
+  // Fit bounds to show all route stops and bus position
   useEffect(() => {
-    if (didFitBoundsRef.current) return
-    if (!mapRef.current || !window.google) return
-    if (routeStops.length === 0 && !current) return
+    if (!map || !window.google?.maps) return
 
     const bounds = new window.google.maps.LatLngBounds()
-    routeStops.forEach((s) => bounds.extend({ lat: s.latitude, lng: s.longitude }))
-    if (current) bounds.extend({ lat: current.latitude, lng: current.longitude })
+    let hasPoints = false
 
-    mapRef.current.fitBounds(bounds, 60)
-    didFitBoundsRef.current = true
-  }, [routeStops, current])
+    if (busPosition) {
+      bounds.extend(busPosition)
+      hasPoints = true
+    }
 
+    stops.forEach((s) => {
+      if (s.latitude && s.longitude) {
+        bounds.extend({ lat: parseFloat(s.latitude), lng: parseFloat(s.longitude) })
+        hasPoints = true
+      }
+    })
+
+    if (hasPoints) {
+      map.fitBounds(bounds, 60)
+    }
+  }, [map, stops, busPosition])
+
+  // Build driving directions from real stop coordinates
+  useEffect(() => {
+    if (!isLoaded || !window.google?.maps || stops.length < 2) return
+
+    const directionsService = new window.google.maps.DirectionsService()
+    const origin = { lat: parseFloat(stops[0].latitude), lng: parseFloat(stops[0].longitude) }
+    const destination = {
+      lat: parseFloat(stops[stops.length - 1].latitude),
+      lng: parseFloat(stops[stops.length - 1].longitude),
+    }
+    const waypoints = stops.slice(1, -1).map((s) => ({
+      location: { lat: parseFloat(s.latitude), lng: parseFloat(s.longitude) },
+      stopover: true,
+    }))
+
+    directionsService.route(
+      { origin, destination, waypoints, travelMode: window.google.maps.TravelMode.DRIVING },
+      (result, status) => {
+        if (status === 'OK') {
+          setDirections(result)
+        } else {
+          console.warn('Google DirectionsService status:', status)
+        }
+      }
+    )
+  }, [isLoaded, stops])
+
+  // Bottom sheet drag handlers
   const handlePointerDown = (e) => {
     e.target.setPointerCapture(e.pointerId)
     startY.current = e.clientY
     startHeight.current = height
   }
-
   const handlePointerMove = (e) => {
     if (e.buttons !== 1) return
     const delta = startY.current - e.clientY
-    const newHeight = Math.min(Math.max(startHeight.current + delta, 80), 700)
-    setHeight(newHeight)
+    setHeight(Math.min(Math.max(startHeight.current + delta, 80), 700))
   }
-
   const handlePointerUp = () => {
     const closest = SNAP_POINTS.reduce((a, b) =>
       Math.abs(b - height) < Math.abs(a - height) ? b : a
@@ -279,46 +223,53 @@ const Track = () => {
     setHeight(closest)
   }
 
-  if (!busId) {
+  const mapCenter = busPosition || (stops.length > 0
+    ? { lat: parseFloat(stops[0].latitude), lng: parseFloat(stops[0].longitude) }
+    : DEFAULT_CENTER)
+
+  // Estimate ETA (rough: distance / speed)
+  const estimateETA = () => {
+    if (!busPosition || stops.length === 0 || busSpeed <= 0) return 'Calculating...'
+    const dest = stops[stops.length - 1]
+    const R = 6371
+    const dLat = ((parseFloat(dest.latitude) - busPosition.lat) * Math.PI) / 180
+    const dLon = ((parseFloat(dest.longitude) - busPosition.lng) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((busPosition.lat * Math.PI) / 180) *
+        Math.cos((parseFloat(dest.latitude) * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2
+    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    const hours = dist / busSpeed
+    if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} min`
+    return `${Math.floor(hours)}h ${Math.round((hours % 1) * 60)}min`
+  }
+
+  const nextStop = stops.length > 0 ? stops[stops.length - 1].name : 'N/A'
+
+  // Polyline coordinates fallback
+  const polylineCoords = stops.map((s) => ({
+    lat: parseFloat(s.latitude),
+    lng: parseFloat(s.longitude),
+  }))
+
+  if (loadError) {
     return (
       <div className='flex min-h-screen flex-col'>
         <Navbar />
-        <div className='flex flex-1 items-center justify-center px-4 text-center text-gray-600'>
-          No bus selected. Go back and pick a bus to track from the search results.
+        <div className='flex flex-col items-center justify-center h-[calc(100vh-110px)] mt-16 p-6 text-center'>
+          <AlertTriangle size={48} className='text-amber-600 mb-4' />
+          <h2 className='text-xl font-bold text-gray-800 mb-2'>Google Maps API Error</h2>
+          <p className='text-sm text-gray-600 max-w-md mb-4'>
+            {loadError.message || 'Please ensure VITE_GOOGLE_MAPS_API_KEY is configured in busyatri/.env.'}
+          </p>
         </div>
         <Footer />
       </div>
     )
   }
 
-  if (!GOOGLE_MAPS_API_KEY) {
-    return (
-      <div className='flex min-h-screen flex-col'>
-        <Navbar />
-        <div className='flex flex-1 items-center justify-center px-4 text-center text-gray-600'>
-          Missing VITE_GOOGLE_MAPS_API_KEY - set it in busyatri/.env to load the map.
-        </div>
-        <Footer />
-      </div>
-    )
-  }
-
-  if (!isLoaded) return <div className='flex items-center justify-center bg-lime-100 h-screen'>Loading map...</div>
-
-  const busIcon = {
-    url: busIconUrl,
-    scaledSize: new window.google.maps.Size(44, 44),
-    anchor: new window.google.maps.Point(22, 22),
-  }
-
-  const stopIcon = {
-    path: window.google.maps.SymbolPath.CIRCLE,
-    scale: 6,
-    fillColor: '#ffffff',
-    fillOpacity: 1,
-    strokeColor: '#1d4ed8',
-    strokeWeight: 2,
-  }
+  if (!isLoaded) return <div className='flex items-center justify-center bg-lime-100 h-screen'>Loading map & route data...</div>
 
   return (
     <div className='flex min-h-screen flex-col'>
@@ -326,58 +277,117 @@ const Track = () => {
       <div className='relative h-[calc(100vh-110px)] w-full mt-16 overflow-hidden'>
         <GoogleMap
           mapContainerStyle={containerStyle}
-          center={DEFAULT_CENTER}
-          zoom={5}
+          center={mapCenter}
+          zoom={stops.length > 0 ? 11 : 12}
           onLoad={onMapLoad}
+          options={{
+            fullscreenControl: true,
+            streetViewControl: false,
+            mapTypeControl: false,
+          }}
         >
-          {/* The actual route, snapped to roads through every stop - from
-              the backend's Google Directions proxy, not a straight line
-              between stops. */}
-          {routePath.length > 1 && (
-            <Polyline
-              path={routePath}
-              options={{ strokeColor: '#1d4ed8', strokeWeight: 5, strokeOpacity: 0.85 }}
+          {directions ? (
+            <DirectionsRenderer
+              directions={directions}
+              options={{
+                suppressMarkers: true,
+                polylineOptions: { strokeColor: '#2563eb', strokeWeight: 5, strokeOpacity: 0.8 },
+              }}
             />
-          )}
-
-          {/* Where the bus has actually been, from recorded GPS pings -
-              kept as its own thinner line so it reads as "breadcrumb
-              trail" rather than "the route". */}
-          {historyPath.length > 1 && (
+          ) : polylineCoords.length >= 2 ? (
             <Polyline
-              path={historyPath}
-              options={{ strokeColor: '#f97316', strokeWeight: 3, strokeOpacity: 0.9 }}
+              path={polylineCoords}
+              options={{
+                strokeColor: '#2563eb',
+                strokeWeight: 4,
+                strokeOpacity: 0.7,
+                geodesic: true,
+              }}
             />
-          )}
+          ) : null}
 
-          {routeStops.map((stop) => (
+          {/* Bus Current Position Marker */}
+          {busPosition && (
             <Marker
-              key={stop.id}
-              position={{ lat: stop.latitude, lng: stop.longitude }}
-              icon={stopIcon}
-              title={stop.name}
+              position={busPosition}
+              label={{
+                text: '🚌',
+                fontSize: '28px',
+              }}
+              icon={{
+                url: 'data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+                scaledSize: { width: 1, height: 1 },
+              }}
+              title='Live Bus Location'
+              onClick={() => setSelectedMarker({ type: 'bus', position: busPosition })}
+            />
+          )}
+
+          {/* Route Stops Markers — white circle dot like Google Maps */}
+          {stops.map((s, i) => (
+            <Marker
+              key={s.id || i}
+              position={{ lat: parseFloat(s.latitude), lng: parseFloat(s.longitude) }}
+              title={s.name}
+              icon={{
+                url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+                  '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">' +
+                  '<circle cx="9" cy="9" r="7" fill="white" stroke="#2563eb" stroke-width="2.5"/>' +
+                  '</svg>'
+                )}`,
+                scaledSize: { width: 18, height: 18 },
+                anchor: { x: 9, y: 9 },
+              }}
+              onClick={() => setSelectedMarker({ type: 'stop', data: s, index: i + 1 })}
             />
           ))}
 
-          {current && (
-            <Marker
-              position={{ lat: current.latitude, lng: current.longitude }}
-              icon={busIcon}
-              title={busNo}
-              zIndex={999}
-            />
+          {/* InfoWindow for selected Marker */}
+          {selectedMarker && selectedMarker.type === 'stop' && (
+            <InfoWindow
+              position={{
+                lat: parseFloat(selectedMarker.data.latitude),
+                lng: parseFloat(selectedMarker.data.longitude),
+              }}
+              onCloseClick={() => setSelectedMarker(null)}
+            >
+              <div className='p-1 max-w-xs'>
+                <p className='font-bold text-sm text-stone-800'>
+                  Stop #{selectedMarker.index}: {selectedMarker.data.name}
+                </p>
+                <p className='text-xs text-gray-500 mt-0.5'>
+                  Lat: {parseFloat(selectedMarker.data.latitude).toFixed(4)}, Lng: {parseFloat(selectedMarker.data.longitude).toFixed(4)}
+                </p>
+              </div>
+            </InfoWindow>
+          )}
+
+          {selectedMarker && selectedMarker.type === 'bus' && (
+            <InfoWindow
+              position={selectedMarker.position}
+              onCloseClick={() => setSelectedMarker(null)}
+            >
+              <div className='p-1 max-w-xs'>
+                <p className='font-bold text-sm text-lime-800'>🚌 Bus Location</p>
+                <p className='text-xs text-gray-600 mt-1'>
+                  Speed: {busSpeed.toFixed(1)} km/h
+                </p>
+                {lastUpdate && <p className='text-[10px] text-gray-400'>Updated: {lastUpdate}</p>}
+              </div>
+            </InfoWindow>
           )}
         </GoogleMap>
 
+        {/* Bottom sheet */}
         <div
           className='absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl transition-[height] duration-150 ease-out z-10'
-          style={{ height: height }}
+          style={{ height }}
         >
           <div
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            className='w-full flex justify-center py-3 touch-none'
+            className='w-full flex justify-center py-3 touch-none cursor-grab active:cursor-grabbing'
           >
             <div className='w-10 h-1.5 bg-gray-300 rounded-full' />
           </div>
@@ -387,136 +397,178 @@ const Track = () => {
               <div className='flex items-center justify-between'>
                 <div className='flex items-center gap-2'>
                   <Bus size={18} className='text-stone-700' />
-                  <span className='font-semibold text-base'>{busNo}</span>
+                  <span className='font-semibold text-base'>
+                    {busId ? `Bus ${busId.slice(0, 8)}...` : 'Bus Tracking'}
+                  </span>
                 </div>
-                <span className='flex items-center gap-1 text-xs font-medium'>
-                  {connectionState === 'live' && <span className='h-2 w-2 rounded-full bg-lime-600' />}
-                  {connectionState === 'connecting' && <Loader2 size={12} className='animate-spin' />}
-                  {connectionState === 'error' && <WifiOff size={14} className='text-red-500' />}
-                  {connectionState === 'live' ? 'Live' : connectionState === 'connecting' ? 'Connecting...' : 'Connection lost'}
+                <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${connected ? 'bg-green-100 text-green-700 font-medium' : 'bg-gray-100 text-gray-500'}`}>
+                  {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
+                  {connected ? 'Live GPS' : 'Offline'}
+                </div>
+              </div>
+
+              <div className='text-sm text-gray-700 font-medium flex items-center gap-2'>
+                <Navigation size={14} className='text-lime-700' />
+                <span>{from}</span>
+                <span className='mx-1 text-gray-400'>→</span>
+                <span>{to}</span>
+              </div>
+
+              <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
+                <div className='flex items-center gap-2 text-sm text-gray-700'>
+                  <Clock size={16} /> Estimated Arrival
+                </div>
+                <span className='text-sm font-semibold text-lime-800'>{estimateETA()}</span>
+              </div>
+
+              <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
+                <div className='flex items-center gap-2 text-sm text-gray-700'>
+                  <Gauge size={16} /> Current Speed
+                </div>
+                <span className='text-sm font-medium'>{busSpeed.toFixed(1)} km/h</span>
+              </div>
+
+              {stops.length > 0 && (
+                <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
+                  <div className='flex items-center gap-2 text-sm text-gray-700'>
+                    <MapPin size={16} /> Destination Stop
+                  </div>
+                  <span className='text-sm font-medium'>{nextStop}</span>
+                </div>
+              )}
+
+              {lastUpdate && (
+                <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
+                  <div className='flex items-center gap-2 text-sm text-gray-700'>
+                    <AlertTriangle size={16} /> Last GPS Update
+                  </div>
+                  <span className='text-sm font-medium text-gray-600'>{lastUpdate}</span>
+                </div>
+              )}
+
+              {stops.length > 0 && (
+                <div className='border-t border-gray-100 pt-3'>
+                  <div className='flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2'>
+                    <MapPin size={14} /> Route Stops ({stops.length})
+                  </div>
+                  <div className='space-y-1.5'>
+                    {stops.map((s, idx) => (
+                      <div key={s.id || idx} className='flex items-center gap-2 text-sm text-gray-700 pl-1'>
+                        <span className='w-5 h-5 rounded-full bg-lime-100 text-lime-800 text-[11px] font-bold flex items-center justify-center shrink-0'>
+                          {idx + 1}
+                        </span>
+                        <span className='font-medium'>{s.name}</span>
+                        <span className='text-[10px] text-gray-400 ml-auto'>
+                          {parseFloat(s.latitude).toFixed(3)}, {parseFloat(s.longitude).toFixed(3)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bus Details & Live Ratings card */}
+            <div className='border border-gray-200 rounded-xl p-4 space-y-4'>
+              <div className='flex items-center justify-between'>
+                <h3 className='font-semibold text-base text-gray-800'>Passenger Ratings & Feedback</h3>
+                <button
+                  type='button'
+                  onClick={() => setShowFeedbackModal(true)}
+                  className='flex items-center gap-1.5 bg-lime-700 hover:bg-lime-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition'
+                >
+                  <MessageSquare size={13} />
+                  Rate & Review
+                </button>
+              </div>
+
+              {/* Rating aggregate display */}
+              <div className='flex items-center gap-3 bg-amber-50/60 p-3 rounded-xl border border-amber-100'>
+                <div className='flex flex-col items-center justify-center bg-white px-3 py-2 rounded-lg border border-amber-200/80 shadow-xs'>
+                  <span className='text-2xl font-black text-amber-600'>
+                    {feedbackData.average_rating ? Number(feedbackData.average_rating).toFixed(1) : '5.0'}
+                  </span>
+                  <div className='flex gap-0.5 mt-0.5'>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Star
+                        key={n}
+                        size={11}
+                        className={
+                          n <= Math.round(feedbackData.average_rating || 5)
+                            ? 'fill-amber-500 text-amber-500'
+                            : 'text-gray-300'
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className='flex-1 space-y-1'>
+                  <div className='text-xs font-bold text-gray-700'>
+                    {feedbackData.total_reviews || 0} Passenger Reviews
+                  </div>
+                  <div className='grid grid-cols-2 gap-2 text-[11px] text-gray-600 mt-1'>
+                    <div className='flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-100'>
+                      <Sparkles size={12} className='text-teal-600 shrink-0' />
+                      <span>Clean: <strong>{Number(feedbackData.avg_cleanliness || 5).toFixed(1)}/5</strong></span>
+                    </div>
+                    <div className='flex items-center gap-1 bg-white px-2 py-1 rounded border border-gray-100'>
+                      <Wind size={12} className='text-sky-600 shrink-0' />
+                      <span>AC: <strong>{feedbackData.ac_working_pct ?? 100}%</strong></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Pills */}
+              <div className='flex items-center gap-2 text-xs'>
+                <span className={`px-2.5 py-1 rounded-full font-medium flex items-center gap-1 ${
+                  (feedbackData.crowded_pct || 0) > 50
+                    ? 'bg-orange-100 text-orange-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  <Users size={12} />
+                  {(feedbackData.crowded_pct || 0) > 50 ? 'Likely Crowded' : 'Seats Comfortable'}
+                </span>
+                <span className='px-2.5 py-1 rounded-full font-medium bg-stone-100 text-stone-700 flex items-center gap-1'>
+                  <Wind size={12} />
+                  {(feedbackData.ac_working_pct ?? 100) >= 60 ? 'AC Reported On' : 'AC Issue Reported'}
                 </span>
               </div>
 
-              {(from || to) && (
-                <div className='text-sm text-gray-600'>
-                  {from || 'Origin'} <span className='mx-1'>⇄</span> {to || 'Destination'}
-                </div>
-              )}
-
-              {!routeId && (
-                <p className='text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2'>
-                  This bus wasn't opened from a matched route, so no route/stops are shown -
-                  only its live position.
-                </p>
-              )}
-
-              {routeError && <p className='text-xs text-red-600'>{routeError}</p>}
-
-              {loadError && <p className='text-xs text-red-600'>{loadError}</p>}
-
-              {!current && !loadError && (
-                <p className='text-sm text-gray-500'>
-                  No location has been recorded for this bus yet. It'll appear here as soon
-                  as its driver starts sending GPS updates.
-                </p>
-              )}
-
-              {current && (
-                <>
-                  <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
-                    <div className='flex items-center gap-2 text-sm text-gray-700'>
-                      <MapPin size={16} />
-                      Position
-                    </div>
-                    <span className='text-sm font-medium'>
-                      {current.latitude.toFixed(5)}, {current.longitude.toFixed(5)}
-                    </span>
-                  </div>
-
-                  <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
-                    <div className='flex items-center gap-2 text-sm text-gray-700'>
-                      <Gauge size={16} />
-                      Speed
-                    </div>
-                    <span className='text-sm font-medium'>
-                      {current.speed_kmh != null ? `${Number(current.speed_kmh).toFixed(1)} km/h` : 'Unknown'}
-                    </span>
-                  </div>
-
-                  <div className='flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2'>
-                    <div className='flex items-center gap-2 text-sm text-gray-700'>
-                      <Clock size={16} />
-                      Last update
-                    </div>
-                    <span className='text-sm font-medium'>
-                      {current.timestamp ? new Date(current.timestamp).toLocaleTimeString() : 'Unknown'}
-                    </span>
-                  </div>
-                </>
-              )}
-
-              {routeStops.length > 0 && (
-                <div className='pt-2'>
-                  <p className='mb-2 text-xs font-semibold text-gray-500'>STOPS ON THIS ROUTE</p>
-                  <ol className='space-y-1'>
-                    {routeStops.map((stop, i) => (
-                      <li key={stop.id} className='flex items-center gap-2 text-sm text-gray-700'>
-                        <span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-800'>
-                          {i + 1}
-                        </span>
-                        {stop.name}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-
-              {/* Passenger feedback & ratings */}
-              <div className='border-t border-gray-100 pt-3 space-y-3'>
+              {/* Vehicle & Driver Info */}
+              <div className='border-t border-gray-100 pt-3 space-y-2 text-xs text-gray-600'>
                 <div className='flex items-center justify-between'>
-                  <div className='flex items-center gap-1.5'>
-                    <Star size={16} className='fill-amber-400 text-amber-400' />
-                    <span className='text-sm font-semibold text-gray-800'>
-                      {Number(feedbackData.average_rating).toFixed(1)}
-                    </span>
-                    <span className='text-xs text-gray-500'>
-                      ({feedbackData.total_reviews} review{feedbackData.total_reviews === 1 ? '' : 's'})
-                    </span>
-                  </div>
-                  <button
-                    type='button'
-                    onClick={() => setShowFeedbackModal(true)}
-                    className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-lime-700 hover:bg-lime-800 rounded-lg shadow-sm transition'
-                  >
-                    <Star size={13} />
-                    Rate Your Journey
-                  </button>
+                  <span className='flex items-center gap-1.5 text-gray-500'>
+                    <User size={14} /> Driver
+                  </span>
+                  <span className='font-medium text-gray-800'>{staticInfo.driver}</span>
                 </div>
-
-                <div className='grid grid-cols-3 gap-2 text-center'>
-                  <div className='bg-stone-50 rounded-lg py-2'>
-                    <p className='text-xs font-semibold text-gray-800'>
-                      {Number(feedbackData.avg_cleanliness).toFixed(1)}/5
-                    </p>
-                    <p className='text-[10px] text-gray-500'>Cleanliness</p>
-                  </div>
-                  <div className='bg-stone-50 rounded-lg py-2'>
-                    <p className='text-xs font-semibold text-gray-800'>{feedbackData.ac_working_pct}%</p>
-                    <p className='text-[10px] text-gray-500'>AC Working</p>
-                  </div>
-                  <div className='bg-stone-50 rounded-lg py-2'>
-                    <p className='text-xs font-semibold text-gray-800'>{feedbackData.crowded_pct}%</p>
-                    <p className='text-[10px] text-gray-500'>Crowded</p>
-                  </div>
+                <div className='flex items-center justify-between'>
+                  <span className='flex items-center gap-1.5 text-gray-500'>
+                    <Phone size={14} /> Helpline
+                  </span>
+                  <span className='font-medium text-gray-800'>{staticInfo.contact}</span>
                 </div>
+              </div>
 
-                {feedbackData.recent_comments?.length > 0 && (
+              {/* Recent passenger feedback comments */}
+              {feedbackData.recent_comments && feedbackData.recent_comments.length > 0 && (
+                <div className='border-t border-gray-100 pt-3'>
+                  <div className='flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2'>
+                    <MessageSquare size={13} /> Recent Passenger Feedback
+                  </div>
                   <div className='space-y-2'>
-                    <p className='text-xs font-semibold text-gray-500'>RECENT FEEDBACK</p>
-                    {feedbackData.recent_comments.map((c, i) => (
-                      <div key={i} className='bg-stone-50 rounded-lg p-2.5 text-xs text-gray-700 space-y-1'>
-                        <p>{c.comment}</p>
-                        <div className='flex items-center gap-2 text-[10px] text-gray-500'>
+                    {feedbackData.recent_comments.map((c, idx) => (
+                      <div key={idx} className='bg-stone-50 rounded-lg p-2.5 text-xs border border-stone-200/60'>
+                        <div className='flex items-center justify-between mb-1'>
+                          <span className='font-medium text-gray-800'>Passenger</span>
+                          <span className='text-[10px] text-gray-400'>
+                            {c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Recent'}
+                          </span>
+                        </div>
+                        <p className='text-gray-700 italic'>"{c.comment}"</p>
+                        <div className='flex items-center gap-2 mt-1.5 text-[10px] text-gray-500'>
                           <span>Cleanliness: {c.cleanliness}/5</span>
                           <span>•</span>
                           <span>AC: {c.ac_working ? 'Yes' : 'No'}</span>
@@ -526,191 +578,197 @@ const Track = () => {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Modal for feedback submission */}
-      {showFeedbackModal && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4'>
-          <div className='bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200'>
-            <button
-              type='button'
-              onClick={() => setShowFeedbackModal(false)}
-              className='absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition'
-            >
-              <X size={20} />
-            </button>
-
-            <h2 className='text-lg font-bold text-gray-900 mb-1'>Rate Your Journey</h2>
-            <p className='text-xs text-gray-500 mb-4'>
-              Your feedback updates live ratings and helps fellow passengers.
-            </p>
-
-            {feedbackSubmitted ? (
-              <div className='py-8 text-center space-y-2'>
-                <CheckCircle size={44} className='mx-auto text-emerald-600 animate-bounce' />
-                <h3 className='text-base font-bold text-gray-800'>Thank you!</h3>
-                <p className='text-xs text-gray-600'>Your feedback and rating have been recorded.</p>
+            {wsError && (
+              <div className='border border-red-200 rounded-xl p-3 bg-red-50 text-sm text-red-700'>
+                {wsError}
               </div>
-            ) : (
-              <form onSubmit={handleFeedbackSubmit} className='space-y-4'>
-                {/* Overall Star Rating */}
-                <div>
-                  <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
-                    Overall Experience Rating
-                  </label>
-                  <div className='flex items-center gap-2'>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, rating: star }))}
-                        className='p-1 hover:scale-110 transition-transform'
-                      >
-                        <Star
-                          size={28}
-                          className={
-                            star <= feedbackForm.rating
-                              ? 'fill-amber-400 text-amber-400'
-                              : 'text-gray-300 hover:text-amber-200'
-                          }
-                        />
-                      </button>
-                    ))}
-                    <span className='ml-2 text-sm font-bold text-amber-600'>
-                      {feedbackForm.rating} / 5
-                    </span>
-                  </div>
-                </div>
-
-                {/* Cleanliness Rating */}
-                <div>
-                  <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
-                    Bus Cleanliness Rating
-                  </label>
-                  <div className='flex gap-1.5'>
-                    {[1, 2, 3, 4, 5].map((val) => (
-                      <button
-                        key={val}
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, cleanliness: val }))}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition ${
-                          feedbackForm.cleanliness === val
-                            ? 'bg-lime-700 text-white border-lime-700 shadow-xs'
-                            : 'bg-stone-50 text-gray-700 border-gray-200 hover:bg-stone-100'
-                        }`}
-                      >
-                        {val} ★
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* AC and Crowdedness Toggles */}
-                <div className='grid grid-cols-2 gap-3 pt-1'>
-                  <div>
-                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
-                      AC Working?
-                    </label>
-                    <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
-                      <button
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: true }))}
-                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
-                          feedbackForm.ac_working
-                            ? 'bg-white text-lime-800 shadow-xs font-bold'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: false }))}
-                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
-                          !feedbackForm.ac_working
-                            ? 'bg-white text-rose-700 shadow-xs font-bold'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        No
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
-                      Is Bus Crowded?
-                    </label>
-                    <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
-                      <button
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: true }))}
-                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
-                          feedbackForm.is_crowded
-                            ? 'bg-white text-orange-700 shadow-xs font-bold'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: false }))}
-                        className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
-                          !feedbackForm.is_crowded
-                            ? 'bg-white text-lime-800 shadow-xs font-bold'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        No
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Comment / Review */}
-                <div>
-                  <label className='block text-xs font-semibold text-gray-700 mb-1'>
-                    Comment or Remarks (Optional)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={feedbackForm.comment}
-                    onChange={(e) => setFeedbackForm((prev) => ({ ...prev, comment: e.target.value }))}
-                    placeholder='Share details about cleanliness, driver conduct, punctuality...'
-                    className='w-full text-xs rounded-lg border border-gray-300 p-2.5 focus:border-lime-700 focus:outline-hidden focus:ring-1 focus:ring-lime-700'
-                  />
-                </div>
-
-                {/* Action buttons */}
-                <div className='flex items-center justify-end gap-2 pt-2'>
-                  <button
-                    type='button'
-                    onClick={() => setShowFeedbackModal(false)}
-                    className='px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition'
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type='submit'
-                    disabled={submittingFeedback}
-                    className='flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-lime-700 hover:bg-lime-800 disabled:opacity-50 rounded-lg shadow-sm transition'
-                  >
-                    <Send size={13} />
-                    {submittingFeedback ? 'Submitting...' : 'Submit Feedback'}
-                  </button>
-                </div>
-              </form>
             )}
           </div>
         </div>
-      )}
 
+        {/* Modal for Feedback Submission */}
+        {showFeedbackModal && (
+          <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4'>
+            <div className='bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200'>
+              <button
+                type='button'
+                onClick={() => setShowFeedbackModal(false)}
+                className='absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition'
+              >
+                <X size={20} />
+              </button>
+
+              <h2 className='text-lg font-bold text-gray-900 mb-1'>Rate Your Journey</h2>
+              <p className='text-xs text-gray-500 mb-4'>
+                Your feedback updates live ratings and helps fellow passengers.
+              </p>
+
+              {feedbackSubmitted ? (
+                <div className='py-8 text-center space-y-2'>
+                  <CheckCircle size={44} className='mx-auto text-emerald-600 animate-bounce' />
+                  <h3 className='text-base font-bold text-gray-800'>Thank you!</h3>
+                  <p className='text-xs text-gray-600'>Your feedback and rating have been recorded.</p>
+                </div>
+              ) : (
+                <form onSubmit={handleFeedbackSubmit} className='space-y-4'>
+                  {/* Overall Star Rating */}
+                  <div>
+                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                      Overall Experience Rating
+                    </label>
+                    <div className='flex items-center gap-2'>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, rating: star }))}
+                          className='p-1 hover:scale-110 transition-transform'
+                        >
+                          <Star
+                            size={28}
+                            className={
+                              star <= feedbackForm.rating
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-gray-300 hover:text-amber-200'
+                            }
+                          />
+                        </button>
+                      ))}
+                      <span className='ml-2 text-sm font-bold text-amber-600'>
+                        {feedbackForm.rating} / 5
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cleanliness Rating */}
+                  <div>
+                    <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                      Bus Cleanliness Rating
+                    </label>
+                    <div className='flex gap-1.5'>
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, cleanliness: val }))}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition ${
+                            feedbackForm.cleanliness === val
+                              ? 'bg-lime-700 text-white border-lime-700 shadow-xs'
+                              : 'bg-stone-50 text-gray-700 border-gray-200 hover:bg-stone-100'
+                          }`}
+                        >
+                          {val} ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* AC and Crowdedness Toggles */}
+                  <div className='grid grid-cols-2 gap-3 pt-1'>
+                    <div>
+                      <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                        AC Working?
+                      </label>
+                      <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
+                        <button
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: true }))}
+                          className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                            feedbackForm.ac_working
+                              ? 'bg-white text-lime-800 shadow-xs font-bold'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, ac_working: false }))}
+                          className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                            !feedbackForm.ac_working
+                              ? 'bg-white text-rose-700 shadow-xs font-bold'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className='block text-xs font-semibold text-gray-700 mb-1.5'>
+                        Is Bus Crowded?
+                      </label>
+                      <div className='flex gap-1 bg-stone-100 p-1 rounded-lg'>
+                        <button
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: true }))}
+                          className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                            feedbackForm.is_crowded
+                              ? 'bg-white text-orange-700 shadow-xs font-bold'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type='button'
+                          onClick={() => setFeedbackForm((prev) => ({ ...prev, is_crowded: false }))}
+                          className={`flex-1 py-1 text-xs font-medium rounded-md transition ${
+                            !feedbackForm.is_crowded
+                              ? 'bg-white text-lime-800 shadow-xs font-bold'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Comment / Review */}
+                  <div>
+                    <label className='block text-xs font-semibold text-gray-700 mb-1'>
+                      Comment or Remarks (Optional)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={feedbackForm.comment}
+                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, comment: e.target.value }))}
+                      placeholder='Share details about cleanliness, driver conduct, punctuality...'
+                      className='w-full text-xs rounded-lg border border-gray-300 p-2.5 focus:border-lime-700 focus:outline-hidden focus:ring-1 focus:ring-lime-700'
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className='flex items-center justify-end gap-2 pt-2'>
+                    <button
+                      type='button'
+                      onClick={() => setShowFeedbackModal(false)}
+                      className='px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition'
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type='submit'
+                      disabled={submittingFeedback}
+                      className='flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-lime-700 hover:bg-lime-800 disabled:opacity-50 rounded-lg shadow-sm transition'
+                    >
+                      <Send size={13} />
+                      {submittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
       <Footer />
     </div>
   )

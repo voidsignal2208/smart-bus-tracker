@@ -1,17 +1,17 @@
-
-
+-- gen_random_uuid() (used as the default for every primary key below)
+-- requires the pgcrypto extension.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-
+-- 1. Roles Table
 CREATE TABLE roles (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL
 );
 
-
+-- Insert default roles
 INSERT INTO roles (name) VALUES ('PASSENGER'), ('DRIVER'), ('CONDUCTOR'), ('ADMIN');
 
-
+-- 2. Users Table
 CREATE TABLE users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     role_id INT REFERENCES roles(id),
@@ -23,7 +23,7 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 3. Buses Table
 CREATE TABLE buses (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     license_plate VARCHAR(20) UNIQUE NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE buses (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 4. Routes Table
 CREATE TABLE routes (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE routes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 5. Stops Table
 CREATE TABLE stops (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     route_id UUID REFERENCES routes(id) ON DELETE CASCADE,
@@ -52,7 +52,7 @@ CREATE TABLE stops (
     UNIQUE(route_id, sequence_order)
 );
 
-
+-- 6. Bus Assignments
 CREATE TABLE bus_assignments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id),
@@ -64,7 +64,7 @@ CREATE TABLE bus_assignments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 7. Bus Locations (Historical Persistence)
 CREATE TABLE bus_locations (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
@@ -77,7 +77,7 @@ CREATE TABLE bus_locations (
 CREATE INDEX idx_bus_locations_bus_id ON bus_locations(bus_id);
 CREATE INDEX idx_bus_locations_timestamp ON bus_locations(timestamp DESC);
 
-
+-- 8. Notifications Table
 CREATE TABLE notifications (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -87,27 +87,24 @@ CREATE TABLE notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 9. Bus Ratings (per-journey star rating submitted by a passenger)
-CREATE TABLE bus_ratings (
+-- Passenger feedback shown on the public tracking page.
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS rating DECIMAL(3, 2);
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS feedback_score DECIMAL(3, 2);
+
+CREATE TABLE IF NOT EXISTS bus_ratings (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
-    rating INT NOT NULL,
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     comment TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 10. Bus Feedback (detailed passenger feedback - cleanliness, AC, crowding)
-CREATE TABLE bus_feedback (
+CREATE TABLE IF NOT EXISTS bus_feedback (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     bus_id UUID REFERENCES buses(id) ON DELETE CASCADE,
     is_crowded BOOLEAN DEFAULT FALSE,
     ac_working BOOLEAN DEFAULT TRUE,
-    cleanliness INT,
+    cleanliness INT NOT NULL CHECK (cleanliness BETWEEN 1 AND 5),
     comment TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Aggregate rating / feedback score kept on buses itself, refreshed on
--- every feedback submission (see FleetController::submitFeedback)
-ALTER TABLE buses ADD COLUMN rating DECIMAL(3, 2) DEFAULT 0;
-ALTER TABLE buses ADD COLUMN feedback_score DECIMAL(3, 2) DEFAULT 0;

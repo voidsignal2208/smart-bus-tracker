@@ -5,10 +5,6 @@
 #include <drogon/drogon.h>
 #include <drogon/HttpClient.h>
 
-#include <sstream>
-#include <string>
-#include <vector>
-
 using namespace drogon;
 
 namespace
@@ -28,47 +24,13 @@ const std::string& directionsApiKey()
     return key;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-bool parseWaypoints(const std::string& raw, std::vector<std::string>& outPairs)
-{
-    std::stringstream ss(raw);
-    std::string pair;
-    while (std::getline(ss, pair, '|'))
-    {
-        if (pair.empty()) continue;
-
-        auto commaPos = pair.find(',');
-        if (commaPos == std::string::npos) return false;
-
-        try
-        {
-            double lat = std::stod(pair.substr(0, commaPos));
-            double lng = std::stod(pair.substr(commaPos + 1));
-            if (!ValidationUtils::isValidLatitude(lat) || !ValidationUtils::isValidLongitude(lng))
-            {
-                return false;
-            }
-        }
-        catch (...)
-        {
-            return false;
-        }
-
-        outPairs.push_back(pair);
-    }
-    return true;
-}
-}  
+// Google's Directions API returns an encoded polyline string (a compact
+// text encoding of a list of lat/lng points) rather than raw coordinates.
+// We pass that string straight through to the frontend, which decodes it
+// with the Google Maps JS library's own google.maps.geometry.encoding
+// helper - no need to decode it server-side at all.
+//for the frontend guy to do
+}  // namespace
 
 void MapsController::getRoutePolyline(const HttpRequestPtr& req,
                                        std::function<void(const HttpResponsePtr&)>&& callback)
@@ -106,39 +68,13 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
         return;
     }
 
-    
-    
-    
-    
-    
-    std::vector<std::string> waypointPairs;
-    auto waypointsParam = req->getParameter("waypoints");
-    if (!waypointsParam.empty() && !parseWaypoints(waypointsParam, waypointPairs))
-    {
-        callback(jsonError(k400BadRequest,
-                            "waypoints must be \"lat,lng|lat,lng|...\" with valid coordinates"));
-        return;
-    }
-
     auto client = HttpClient::newHttpClient("https://maps.googleapis.com");
 
     std::string path = "/maps/api/directions/json"
                         "?origin=" + originLatStr + "," + originLngStr +
                         "&destination=" + destLatStr + "," + destLngStr +
-                        "&mode=driving";
-
-    if (!waypointPairs.empty())
-    {
-        std::string joined;
-        for (size_t i = 0; i < waypointPairs.size(); ++i)
-        {
-            if (i > 0) joined += "|";
-            joined += waypointPairs[i];
-        }
-        path += "&waypoints=" + joined;
-    }
-
-    path += "&key=" + directionsApiKey();
+                        "&mode=driving"
+                        "&key=" + directionsApiKey();
 
     auto googleReq = HttpRequest::newHttpRequest();
     googleReq->setMethod(Get);
@@ -161,24 +97,14 @@ void MapsController::getRoutePolyline(const HttpRequestPtr& req,
             }
 
             const auto& route = (*googleJson)["routes"][0];
-            const auto& legs = route["legs"];
-
-            
-            
-            
-            unsigned long long legDistance = 0, legDuration = 0;
-            for (const auto& leg : legs)
-            {
-                legDistance += leg["distance"]["value"].asUInt();
-                legDuration += leg["duration"]["value"].asUInt();
-            }
+            const auto& leg = route["legs"][0];
 
             Json::Value ret;
             ret["polyline"] = route["overview_polyline"]["points"];
-            ret["distance_meters"] = static_cast<Json::UInt64>(legDistance);
-            ret["duration_seconds"] = static_cast<Json::UInt64>(legDuration);
+            ret["distance_meters"] = leg["distance"]["value"];
+            ret["duration_seconds"] = leg["duration"]["value"];
 
             callback(HttpResponse::newHttpJsonResponse(ret));
         },
-        30 );
+        30 /* seconds timeout */);
 }

@@ -3,27 +3,6 @@
 
 using namespace drogon;
 
-void AuthController::registerUser(const HttpRequestPtr& req,
-                                  std::function<void(const HttpResponsePtr&)>&& callback) {
-    auto json = req->getJsonObject();
-    if (!json || !(*json)["name"].isString() || !(*json)["email"].isString() || !(*json)["password"].isString()) {
-        Json::Value ret;
-        ret["error"] = "Invalid JSON or missing fields (name, email, password required)";
-        auto resp = HttpResponse::newHttpJsonResponse(ret);
-        resp->setStatusCode(k400BadRequest);
-        callback(resp);
-        return;
-    }
-
-    int roleId = (*json)["role_id"].isInt() ? (*json)["role_id"].asInt() : 0;
-
-    AuthService::registerUser((*json)["name"].asString(),
-                               (*json)["email"].asString(),
-                               (*json)["password"].asString(),
-                               roleId,
-                               callback);
-}
-
 void AuthController::login(const HttpRequestPtr& req,
                            std::function<void(const HttpResponsePtr&)>&& callback) {
     auto json = req->getJsonObject();
@@ -37,4 +16,30 @@ void AuthController::login(const HttpRequestPtr& req,
     }
 
     AuthService::login((*json)["email"].asString(), (*json)["password"].asString(), callback);
+}
+
+void AuthController::registerUser(const HttpRequestPtr& req,
+                                   std::function<void(const HttpResponsePtr&)>&& callback) {
+    auto json = req->getJsonObject();
+    if (!json ||
+        !(*json)["name"].isString() ||
+        !(*json)["email"].isString() ||
+        !(*json)["password"].isString() ||
+        !(*json)["role"].isString()) {
+        Json::Value ret;
+        ret["error"] = "name, email, password and role are required";
+        auto resp = HttpResponse::newHttpJsonResponse(ret);
+        resp->setStatusCode(k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string phone = (*json)["phone"].isString() ? (*json)["phone"].asString() : "";
+
+    AuthService::registerUser((*json)["name"].asString(),
+                               (*json)["email"].asString(),
+                               (*json)["password"].asString(),
+                               (*json)["role"].asString(),
+                               phone,
+                               callback);
 }

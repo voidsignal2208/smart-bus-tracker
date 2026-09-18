@@ -13,11 +13,9 @@ public:
                       "/api/v1/tracking/buses/{1}/location", drogon::Post,
                       "JwtAuthFilter", "StaffOnlyFilter");
         ADD_METHOD_TO(TrackingController::getLatestLocation,
-                      "/api/v1/tracking/buses/{1}/location", drogon::Get,
-                      "JwtAuthFilter");
+                      "/api/v1/tracking/buses/{1}/location", drogon::Get);
         ADD_METHOD_TO(TrackingController::getHistory,
-                      "/api/v1/tracking/buses/{1}/history", drogon::Get,
-                      "JwtAuthFilter");
+                      "/api/v1/tracking/buses/{1}/history", drogon::Get);
     METHOD_LIST_END
 
     void postLocation(const drogon::HttpRequestPtr& req,

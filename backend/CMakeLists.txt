@@ -67,5 +67,5 @@ target_link_libraries(${PROJECT_NAME}
         OpenSSL::Crypto
         jwt-cpp::jwt-cpp
         nlohmann_json::nlohmann_json
-        JsonCpp::JsonCpp
+        jsoncpp_lib
 )

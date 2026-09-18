@@ -1,163 +1,71 @@
 import React, { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { UserKey, Mail, Lock, User } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
-import Footer from '../components/Footer'
-import { useAuth } from '../context/AuthContext'
-import { ApiError } from '../lib/api'
-import { roleHomePath } from '../lib/roles'
+import { useAuth, ROLES } from '../context/AuthContext'
+import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, BusFront } from 'lucide-react'
 
 const Login = () => {
-  const [mode, setMode] = useState('login') // 'login' | 'register'
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const { login, register } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const { login, logout } = useAuth()
+  const [selectedRole, setSelectedRole] = useState(ROLES.DRIVER)
+  const [email, setEmail] = useState(location.state?.email || '')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const justRegistered = Boolean(location.state?.registered)
+  const selectedRoleName = selectedRole === ROLES.ADMIN ? 'Admin' : 'Driver'
 
-  const redirectAfterAuth = (loggedInUser) => {
-    // If the user was bounced here by ProtectedRoute from some other
-    // page, send them back there; otherwise send them to their role's
-    // home page (passenger search, driver console, or admin dashboard).
-    const from = location.state?.from
-    navigate(from || roleHomePath(loggedInUser.roleId), { replace: true })
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setSubmitting(true)
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError(null)
+    setLoading(true)
     try {
-      const loggedInUser =
-        mode === 'login' ? await login(email, password) : await register(name, email, password)
-      redirectAfterAuth(loggedInUser)
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError('Something went wrong. Please try again.')
+      const user = await login(email, password)
+      if (user.roleId !== selectedRole) {
+        logout()
+        throw new Error(`These credentials do not belong to a ${selectedRoleName} account.`)
       }
+      navigate(selectedRole === ROLES.ADMIN ? '/admin' : '/driver')
+    } catch (err) {
+      setError(err.message || 'Unable to sign in.')
     } finally {
-      setSubmitting(false)
+      setLoading(false)
     }
   }
 
   return (
     <div className='min-h-screen bg-amber-50 flex flex-col'>
       <Navbar />
-
-      <div className='flex-1 flex items-center justify-center px-5 pt-20 pb-10'>
-        <form
-          onSubmit={handleSubmit}
-          className='w-full max-w-sm rounded-xl bg-white p-6 shadow-lg'
-        >
-          <div className='mb-5 flex items-center gap-2'>
-            <UserKey size={22} className='text-lime-800' />
-            <h2 className='text-xl font-bold'>
-              {mode === 'login' ? 'Welcome back' : 'Create your account'}
-            </h2>
-          </div>
-
-          {mode === 'register' && (
-            <>
-              <label className='mb-1 block text-xs'>NAME</label>
-              <div className='mb-3 flex items-center gap-2 rounded border border-gray-300 px-3 py-3'>
-                <User size={20} />
-                <input
-                  type='text'
-                  required
-                  placeholder='Your name'
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className='w-full outline-none'
-                />
+      <main className='flex-1 flex items-center justify-center px-4 pt-16 pb-8'>
+        <section className='w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-200 p-6'>
+          <h1 className='text-xl font-bold text-gray-900'>Staff login</h1>
+          <p className='mt-1 text-sm text-gray-500'>Choose your account type, then enter your existing credentials.</p>
+          {justRegistered && <div className='mt-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2'><CheckCircle2 size={16} />Account created. Sign in with your new credentials.</div>}
+          <form onSubmit={handleSubmit} className='mt-6 space-y-4'>
+            <fieldset>
+              <legend className='text-xs font-semibold text-gray-500'>LOGIN AS</legend>
+              <div className='mt-2 grid grid-cols-2 gap-3'>
+                <button type='button' onClick={() => setSelectedRole(ROLES.DRIVER)} className={`rounded-lg border p-3 text-left text-sm font-semibold ${selectedRole === ROLES.DRIVER ? 'border-lime-800 bg-lime-50 text-lime-900 ring-1 ring-lime-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}><BusFront size={18} className='mb-2' />Driver</button>
+                <button type='button' onClick={() => setSelectedRole(ROLES.ADMIN)} className={`rounded-lg border p-3 text-left text-sm font-semibold ${selectedRole === ROLES.ADMIN ? 'border-lime-800 bg-lime-50 text-lime-900 ring-1 ring-lime-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}><ShieldCheck size={18} className='mb-2' />Admin</button>
               </div>
-            </>
-          )}
-
-          <label className='mb-1 block text-xs'>EMAIL</label>
-          <div className='mb-3 flex items-center gap-2 rounded border border-gray-300 px-3 py-3'>
-            <Mail size={20} />
-            <input
-              type='email'
-              required
-              placeholder='you@example.com'
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className='w-full outline-none'
-            />
-          </div>
-
-          <label className='mb-1 block text-xs'>PASSWORD</label>
-          <div className='mb-2 flex items-center gap-2 rounded border border-gray-300 px-3 py-3'>
-            <Lock size={20} />
-            <input
-              type='password'
-              required
-              minLength={8}
-              placeholder='At least 8 characters'
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className='w-full outline-none'
-            />
-          </div>
-
-          {mode === 'register' && (
-            <p className='mb-3 text-xs text-gray-500'>
-              New accounts always start as a Passenger. Ask an administrator to upgrade
-              a Driver/Conductor/Admin account.
-            </p>
-          )}
-
-          {error && <p className='mb-3 text-sm text-red-600'>{error}</p>}
-
-          <button
-            type='submit'
-            disabled={submitting}
-            className='mt-2 flex w-full items-center justify-center gap-2 rounded bg-lime-800 py-3 font-bold text-white disabled:opacity-60'
-          >
-            {submitting ? 'Please wait...' : mode === 'login' ? 'Log in' : 'Sign up'}
-          </button>
-
-          <p className='mt-4 text-center text-sm text-gray-600'>
-            {mode === 'login' ? (
-              <>
-                Don't have an account?{' '}
-                <button
-                  type='button'
-                  className='font-semibold text-lime-800 hover:underline'
-                  onClick={() => {
-                    setMode('register')
-                    setError('')
-                  }}
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{' '}
-                <button
-                  type='button'
-                  className='font-semibold text-lime-800 hover:underline'
-                  onClick={() => {
-                    setMode('login')
-                    setError('')
-                  }}
-                >
-                  Log in
-                </button>
-              </>
-            )}
+            </fieldset>
+            <div>
+              <label htmlFor='email' className='text-xs font-semibold text-gray-500'>USERNAME / EMAIL</label>
+              <input id='email' type='email' autoComplete='username' required value={email} onChange={(event) => setEmail(event.target.value)} className='mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-lime-700' />
+            </div>
+            <div>
+              <label htmlFor='password' className='text-xs font-semibold text-gray-500'>PASSWORD</label>
+              <input id='password' type='password' autoComplete='current-password' required value={password} onChange={(event) => setPassword(event.target.value)} className='mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-lime-700' />
+            </div>
+            {error && <div className='flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2'><AlertCircle size={16} />{error}</div>}
+            <button type='submit' disabled={loading} className='w-full flex items-center justify-center gap-2 bg-lime-800 text-white rounded-lg py-2 text-sm font-semibold hover:bg-lime-900 disabled:opacity-60'>{loading && <Loader2 size={16} className='animate-spin' />}Sign in as {selectedRoleName}</button>
+          </form>
+          <p className='mt-4 text-center text-sm text-gray-500'>
+            New driver or admin? <Link to='/register' className='font-semibold text-lime-800 hover:underline'>Create an account</Link>
           </p>
-        </form>
-      </div>
-
-      <Footer />
+        </section>
+      </main>
     </div>
   )
 }

@@ -1,55 +1,68 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
-import { loginUser, registerUser, getToken, setToken as persistToken, ApiError } from '../lib/api'
-import { decodeJwt, isTokenExpired } from '../lib/jwt'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { getToken, setToken as saveToken, clearToken, getUserFromToken } from '../services/api'
+import { authService } from '../services/authService'
 
 const AuthContext = createContext(null)
 
-function userFromToken(token) {
-  if (!token || isTokenExpired(token)) return null
-  const claims = decodeJwt(token)
-  if (!claims) return null
-  return {
-    id: claims.user_id,
-    roleId: Number(claims.role_id),
-    token,
-  }
+export const ROLES = {
+  PASSENGER: 1,
+  DRIVER: 2,
+  CONDUCTOR: 3,
+  ADMIN: 4,
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => userFromToken(getToken()))
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  const login = useCallback(async (email, password) => {
-    const data = await loginUser({ email, password })
-    persistToken(data.token)
-    const nextUser = userFromToken(data.token)
-    setUser(nextUser)
-    return nextUser
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const token = getToken()
+    if (token) {
+      const decoded = getUserFromToken()
+      if (decoded) {
+        setUser({ ...decoded, token })
+      } else {
+        clearToken()
+      }
+    }
+    setLoading(false)
   }, [])
 
-  const register = useCallback(async (name, email, password) => {
-    // Registration never returns a token (self-registration is always
-    // PASSENGER, per AuthService.cc) - log in right after so the caller
-    // ends up authenticated in one step.
-    await registerUser({ name, email, password })
-    return login(email, password)
-  }, [login])
+  const login = useCallback(async (email, password) => {
+    const data = await authService.login(email, password)
+    if (!data?.token) throw new Error('The server did not return a login token')
+    saveToken(data.token)
+    const decoded = getUserFromToken()
+    if (!decoded) {
+      clearToken()
+      throw new Error('The server returned an invalid login token')
+    }
+    // The signed token is the source of truth for access control. Do not
+    // trust a separately returned role value when deciding where to route.
+    const userData = { ...decoded, token: data.token }
+    setUser(userData)
+    return userData
+  }, [])
 
   const logout = useCallback(() => {
-    persistToken(null)
+    clearToken()
     setUser(null)
   }, [])
 
-  return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const value = {
+    user,
+    loading,
+    isAuthenticated: !!user,
+    login,
+    logout,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within an AuthProvider')
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
-
-export { ApiError }
