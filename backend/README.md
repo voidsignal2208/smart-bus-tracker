@@ -1,6 +1,7 @@
 # Smart Bus Tracker — Backend
 
-A Drogon (C++17) REST + WebSocket backend for real-time bus tracking, backed by PostgreSQL.
+A Drogon (C++17) REST + WebSocket backend for real-time bus tracking, backed by PostgreSQL,
+with Redis as a cache-aside layer in front of the hottest read (latest bus location).
 
 This tree has been fixed up from the original upload: leaked credentials removed,
 password hashing replaced, role-based authorization added, and every previously-empty
@@ -11,6 +12,7 @@ tested end-to-end against a real Postgres instance.
 
 - CMake ≥ 3.16, a C++17 compiler (GCC/Clang)
 - PostgreSQL (13+ recommended)
+- Redis (6+ recommended) — optional but on by default; see note below
 - Drogon dev package and its dependencies. On Ubuntu/Debian:
 
 ```bash
@@ -21,6 +23,9 @@ sudo apt-get install -y build-essential cmake libdrogon-dev libssl-dev libpq-dev
 
 (`jwt-cpp` is fetched automatically at configure time via CMake `FetchContent` — no
 separate install needed, but the build machine needs network access to GitHub.)
+(`libhiredis-dev` above is what gives the system `libdrogon-dev` package its Redis
+support — building via vcpkg instead needs the `drogon[redis]` feature, already set
+in `vcpkg.json`.)
 
 ## 2. Configure secrets
 
@@ -29,6 +34,7 @@ cp .env.example .env
 # then edit .env:
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE
 #   JWT_SECRET   (generate one with: openssl rand -hex 32)
+#   REDIS_HOST, REDIS_PORT, REDIS_PASSWORD   (see Redis note below)
 ```
 
 `.env` is git-ignored. `config.json` itself contains no secrets — it only has
@@ -48,7 +54,21 @@ psql -d busdb -f database/init.sql
 (`init.sql` now enables the `pgcrypto` extension itself, which `gen_random_uuid()`
 requires — a fresh Postgres doesn't have it on by default.)
 
-## 4. Build
+## 4. Redis (cache, not required for correctness)
+
+```bash
+# e.g. locally:
+redis-server
+# or: docker run -p 6379:6379 redis:7-alpine
+```
+
+`config.json`'s `redis_clients` entry expects one at `REDIS_HOST:REDIS_PORT`
+(defaults to `localhost:6379`, no password). The app only ever reads/writes a
+`bus:latest_location:<busId>` key with a 30s TTL — nothing else depends on it,
+so an unreachable or unconfigured Redis degrades to "every `GET .../latest`
+hits Postgres" rather than failing requests. There's nothing to migrate/seed.
+
+## 5. Build
 
 ```bash
 mkdir -p build && cd build
@@ -58,7 +78,7 @@ cmake --build . -j$(nproc)
 
 Produces `build/SmartBusTracker`.
 
-## 5. Run
+## 6. Run
 
 ```bash
 cd backend    # so config.json / .env are found via relative paths
@@ -122,6 +142,9 @@ Admin accounts directly in the organization database.
 - Removed the committed `build/` directory (hundreds of MB of vendored
   dependency source that had been accidentally checked in) and added a
   `.gitignore`.
+- **Added Redis caching**: `redis_clients` config, a `CacheService` wrapping
+  Drogon's Redis client, and cache-aside reads/write-through writes for
+  `GET .../latest` (see the Redis section above and "Known gaps" for scope/limits).
 
 ## Verification performed
 
@@ -150,5 +173,9 @@ PostgreSQL 16 instance and confirmed via curl / a small Python WebSocket script:
 - No rate limiting on `/auth/login` or `/auth/register` (brute-force / spam risk).
 - ETA calculation (`GeoUtils::etaSeconds`) is implemented but not yet wired into
   an endpoint — nothing currently calls it.
-- `redis_clients` config was removed since nothing in the codebase used it; add
-  it back if/when you build caching or pub/sub on top of Redis.
+- Redis is currently used for exactly one thing: caching `GET .../latest` results
+  (see `src/services/CacheService.*`). Multi-instance deployments still fan out
+  WebSocket broadcasts and subscriber state in-process (`TrackingService.cc`'s
+  `g_busSubscribers`), so a bus's location updates are only pushed live to clients
+  connected to the same backend instance that received the update; add a Redis
+  pub/sub channel there if you scale the backend horizontally.

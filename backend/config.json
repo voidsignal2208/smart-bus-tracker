@@ -25,5 +25,17 @@
                 "sslmode": "${DB_SSLMODE}"
             }
         }
+    ],
+    "redis_clients": [
+        {
+            "name": "default",
+            "host": "${REDIS_HOST}",
+            "port": "${REDIS_PORT}",
+            "passwd": "${REDIS_PASSWORD}",
+            "db": 0,
+            "connection_number": 2,
+            "is_fast": false,
+            "timeout": 5.0
+        }
     ]
 }

@@ -77,7 +77,19 @@ smart-bus-tracker/
 - **Databases**: PostgreSQL 14+, Redis 6+
 - **Frontend**: Node.js 18+, npm/yarn
 
-> Detailed build instructions will be added as development progresses.
+> Detailed build-from-source instructions live in `backend/README.md`.
+
+### Quick start (Docker Compose)
+
+```bash
+cp .env.example .env   # fill in DB_*, JWT_SECRET, GOOGLE_MAPS_SERVER_KEY, etc.
+docker compose up --build
+```
+
+This starts the `backend`, `frontend`, and a `redis` container (used to cache the
+latest known position per bus). `postgres` stays optional — by default the
+backend points at `DB_HOST` from `.env` (e.g. a hosted DB); run
+`docker compose --profile local-db up` instead if you want a local Postgres too.
 
 ## 🗺️ Development Roadmap
 

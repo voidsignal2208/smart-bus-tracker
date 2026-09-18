@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+build/
+uploads/tmp/*
+*.zone.identifier
+*:Zone.Identifier
+.DS_Store
+.git
+.gitignore
+README.md
+CMakePresets.json

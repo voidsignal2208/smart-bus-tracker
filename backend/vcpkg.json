@@ -8,7 +8,8 @@
         {
             "name": "drogon",
             "features": [
-                "postgres"
+                "postgres",
+                "redis"
             ]
         }
     ]
