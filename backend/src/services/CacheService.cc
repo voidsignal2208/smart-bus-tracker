@@ -78,7 +78,7 @@ void CacheService::getCachedLatestLocation(const std::string& busId,
     const std::string key = keyFor(busId);
 
     client->execCommandAsync(
-        [callback](const RedisResult& result) {
+        [key, callback](const RedisResult& result) {
             if (result.type() != RedisResultType::kString)
             {
                 // kNil (cache miss) or an unexpected type — either way,
